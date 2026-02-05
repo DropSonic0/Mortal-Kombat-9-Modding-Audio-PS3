@@ -59,7 +59,7 @@ void ExtractXXX(const std::string& path) {
             if (f.read(sig, 3)) {
                 if (sig[0] == 'S' && sig[1] == 'B' && (sig[2] == '4' || sig[2] == '5')) {
                     size_t startPos = (size_t)f.tellg() - 4;
-                    std::cout << "Found " << sig[2] << " at 0x" << std::hex << startPos << std::dec << std::endl;
+                    std::cout << "Found FSB" << sig[2] << " [Index " << fsbCount << "] at 0x" << std::hex << startPos << std::dec << std::endl;
 
                     uint32_t shdrSize = 0;
                     uint32_t dataSize = 0;
