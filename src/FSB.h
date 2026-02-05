@@ -25,6 +25,7 @@ struct FSBSample {
 };
 
 std::vector<FSBSample> ParseFSB(const std::string& fsbPath);
+void ExtractFSB(const std::string& fsbPath);
 bool PatchFSBSample(const std::string& fsbPath, const std::string& sampleName, const std::string& newSampleDataPath);
 
 #endif

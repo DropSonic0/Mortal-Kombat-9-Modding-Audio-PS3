@@ -3,6 +3,7 @@
 #include <iostream>
 #include <vector>
 #include <iterator>
+#include <cstring>
 
 void ExtractXXX(const std::string& path) {
     std::ifstream f(path, std::ios::binary);

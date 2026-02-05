@@ -2,11 +2,14 @@ MK9Tool for PS3 - Quick Guide
 ============================
 
 1. EXTRACTION
-Run: MK9Tool.exe <file.xxx>
-This creates a folder with:
+Run: MK9Tool.exe <file.xxx> OR MK9Tool.exe <file.fsb>
+If extracting .XXX:
 - header.bin / data.bin (The raw UE3 package parts)
 - audio_X.fsb (Internal FMOD sound banks)
 - audio_X_samples/ (Folder with individual audio tracks names)
+
+If extracting .FSB:
+- Folder with individual .bin audio tracks.
 
 2. HOW TO CREATE NEW AUDIO (FSB)
 To replace audio, you need to encode your WAVs into the FMOD format used by the game:

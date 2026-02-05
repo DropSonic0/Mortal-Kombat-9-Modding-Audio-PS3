@@ -61,6 +61,28 @@ std::vector<FSBSample> ParseFSB(const std::string& fsbPath) {
     return samples;
 }
 
+void ExtractFSB(const std::string& fsbPath) {
+    auto samples = ParseFSB(fsbPath);
+    if (samples.empty()) {
+        std::cout << "No samples found or invalid FSB: " << fsbPath << std::endl;
+        return;
+    }
+
+    std::string outDir = GetFileNameWithoutExtension(fsbPath) + "_samples";
+    CreateDirectoryIfNotExists(outDir);
+
+    std::ifstream f(fsbPath, std::ios::binary);
+    for (auto& s : samples) {
+        std::ofstream sf(outDir + "/" + s.name + ".bin", std::ios::binary);
+        f.seekg(s.offset);
+        std::vector<char> buf(s.size);
+        f.read(buf.data(), s.size);
+        sf.write(buf.data(), s.size);
+        sf.close();
+    }
+    std::cout << "Extracted " << samples.size() << " samples to " << outDir << std::endl;
+}
+
 bool PatchFSBSample(const std::string& fsbPath, const std::string& sampleName, const std::string& newSampleDataPath) {
     std::vector<FSBSample> samples = ParseFSB(fsbPath);
     auto it = std::find_if(samples.begin(), samples.end(), [&](const FSBSample& s) {
