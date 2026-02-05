@@ -64,6 +64,21 @@ void extract(string filename) {
         dOut.write(data.data(), dataSize);
         dOut.close();
         cout << "Archivos extraidos: " << hName << " y " << dName << endl;
+
+        // Escaneo basico de archivos conocidos en el bloque de datos
+        int audioCount = 0;
+        for (size_t i = 0; i < data.size() - 4; ++i) {
+            if (memcmp(&data[i], "FSB4", 4) == 0) {
+                string audioName = filename + "_audio_" + to_string(audioCount++) + ".fsb";
+                cout << "  -> Se encontro y extrajo audio FSB4: " << audioName << " (Offset: 0x" << hex << i << dec << ")" << endl;
+
+                // Para simplificar, extraemos desde el tag hasta el final del bloque de datos
+                // En modding real, el usuario podria querer reemplazar esto exacto.
+                ofstream aOut(audioName, ios::binary);
+                aOut.write(&data[i], data.size() - i);
+                aOut.close();
+            }
+        }
     } else {
         cout << "El archivo no contiene datos adicionales fuera del header." << endl;
     }
