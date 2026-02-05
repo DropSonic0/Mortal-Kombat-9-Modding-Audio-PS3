@@ -21,8 +21,9 @@ std::vector<FSBSample> ParseFSB(const std::string& fsbPath) {
     uint32_t shdrSize = LE32(header.shdr_size);
     uint32_t dataSize = LE32(header.data_size);
 
-    uint32_t currentSampleHeaderOffset = sizeof(FSB4_HEADER);
-    uint32_t dataOffsetBase = sizeof(FSB4_HEADER) + shdrSize;
+    uint32_t headerSize = DetectFSB4HeaderSize(f, 0, shdrSize);
+    uint32_t currentSampleHeaderOffset = headerSize;
+    uint32_t dataOffsetBase = headerSize + shdrSize;
     uint32_t currentDataOffset = 0;
 
     for (uint32_t i = 0; i < numSamples; ++i) {
@@ -81,6 +82,23 @@ void ExtractFSB(const std::string& fsbPath) {
         sf.close();
     }
     std::cout << "Extracted " << samples.size() << " samples to " << outDir << std::endl;
+}
+
+uint32_t DetectFSB4HeaderSize(std::istream& f, size_t startPos, uint32_t shdrSize) {
+    auto currentPos = f.tellg();
+    f.seekg(startPos + 24);
+    uint16_t testSize;
+    if (!f.read((char*)&testSize, 2)) {
+        f.clear();
+        f.seekg(currentPos);
+        return 48;
+    }
+    testSize = LE16(testSize);
+    f.seekg(currentPos);
+    // If the size at offset 24 looks like a valid sample header size (32-512 bytes)
+    // and is less than or equal to total shdrSize, it's likely a 24-byte main header.
+    if (testSize >= 32 && testSize <= 512 && testSize <= shdrSize) return 24;
+    return 48;
 }
 
 bool PatchFSBSample(const std::string& fsbPath, const std::string& sampleName, const std::string& newSampleDataPath) {

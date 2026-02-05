@@ -71,7 +71,8 @@ void ExtractXXX(const std::string& path) {
                         f.read((char*)&fsbHeader, sizeof(fsbHeader));
                         shdrSize = LE32(fsbHeader.shdr_size);
                         dataSize = LE32(fsbHeader.data_size);
-                        totalFSBSize = sizeof(FSB4_HEADER) + shdrSize + dataSize;
+                        uint32_t headerSize = DetectFSB4HeaderSize(f, startPos, shdrSize);
+                        totalFSBSize = headerSize + shdrSize + dataSize;
                     } else {
                         // FSB5 - just a placeholder chunk
                         totalFSBSize = 1024 * 1024; // 1MB safe chunk
@@ -185,8 +186,9 @@ void PatchXXXAudio(const std::string& xxxPath, const std::string& sampleName, co
                     uint32_t numSamples = LE32(fsbHeader.numsamples);
                     uint32_t shdrSize = LE32(fsbHeader.shdr_size);
 
-                    uint32_t currentSampleHeaderOffset = (uint32_t)startPos + sizeof(FSB4_HEADER);
-                    uint32_t dataOffsetBase = (uint32_t)startPos + sizeof(FSB4_HEADER) + shdrSize;
+                    uint32_t headerSize = DetectFSB4HeaderSize(f, startPos, shdrSize);
+                    uint32_t currentSampleHeaderOffset = (uint32_t)startPos + headerSize;
+                    uint32_t dataOffsetBase = (uint32_t)startPos + headerSize + shdrSize;
                     uint32_t currentDataOffset = 0;
 
                     for (uint32_t j = 0; j < numSamples; ++j) {
