@@ -113,13 +113,21 @@ void ExtractXXX(const std::string& path) {
                     auto samples = ParseFSB(fsbOutPath);
                     if (!samples.empty()) {
                         std::ifstream fsbIn(fsbOutPath, std::ios::binary);
+                        fsbIn.seekg(0, std::ios::end);
+                        size_t fsbActualSize = (size_t)fsbIn.tellg();
+                        fsbIn.seekg(0, std::ios::beg);
+
                         for (auto& s : samples) {
-                            if (s.offset + s.size <= totalFSBSize) {
+                            if (s.offset < fsbActualSize) {
+                                uint32_t toRead = s.size;
+                                if (s.offset + toRead > fsbActualSize) toRead = (uint32_t)(fsbActualSize - s.offset);
+                                if (toRead == 0) continue;
+
                                 std::ofstream sf(samplesDir + "/" + s.name + ".bin", std::ios::binary);
                                 fsbIn.seekg(s.offset);
-                                std::vector<char> sbuf(s.size);
-                                fsbIn.read(sbuf.data(), s.size);
-                                sf.write(sbuf.data(), s.size);
+                                std::vector<char> sbuf(toRead);
+                                fsbIn.read(sbuf.data(), toRead);
+                                sf.write(sbuf.data(), toRead);
                                 sf.close();
                             }
                         }

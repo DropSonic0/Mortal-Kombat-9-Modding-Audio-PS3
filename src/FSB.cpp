@@ -20,6 +20,7 @@ std::vector<FSBSample> ParseFSB(const std::string& fsbPath) {
     uint32_t numSamples = LE32(header.numsamples);
     uint32_t shdrSize = LE32(header.shdr_size);
     uint32_t dataSize = LE32(header.data_size);
+    uint32_t flags = LE32(header.flags);
 
     uint32_t headerSize = DetectFSB4HeaderSize(f, 0, shdrSize);
     uint32_t currentSampleHeaderOffset = headerSize;
@@ -36,26 +37,51 @@ std::vector<FSBSample> ParseFSB(const std::string& fsbPath) {
         memset(name, 0, 31);
         f.read(name, 30);
 
-        // This is a simplified parser.
-        // We need to find the size and offset of the audio data for this sample.
-        // In some FSB4, it's in the sample header.
+        uint32_t offset = 0xFFFFFFFF;
+        uint32_t compressedSize = 0;
 
-        // Skip some fields to get to compressed size
-        // FSB4_SAMPLE_HEADER: size(2), name(30), numsamples(4), compressedsize(4)...
-        f.seekg(currentSampleHeaderOffset + 2 + 30 + 4);
-        uint32_t compressedSize;
-        f.read((char*)&compressedSize, 4);
-        compressedSize = LE32(compressedSize);
+        if (flags & 0x100) { // FSB_FLAGS_HAS_OFFSETS
+            f.seekg(currentSampleHeaderOffset + 32);
+            f.read((char*)&offset, 4);
+            offset = LE32(offset);
+            f.read((char*)&compressedSize, 4);
+            compressedSize = LE32(compressedSize);
+        } else {
+            // Heuristic for MK9 vs Standard FMOD
+            uint32_t val1, val2;
+            f.seekg(currentSampleHeaderOffset + 32);
+            f.read((char*)&val1, 4); val1 = LE32(val1);
+            f.read((char*)&val2, 4); val2 = LE32(val2);
+
+            // In MK9: 32 is uncompressed, 36 is compressed. Usually compressed < uncompressed.
+            // In Standard: 32 is compressed, 36 is uncompressed.
+            if (val1 > val2 && val2 > 0) {
+                compressedSize = val2;
+            } else {
+                compressedSize = val1;
+            }
+        }
 
         FSBSample s;
         s.name = name;
-        s.offset = dataOffsetBase + currentDataOffset;
+        if (offset != 0xFFFFFFFF) {
+            s.offset = dataOffsetBase + offset;
+            currentDataOffset = offset + compressedSize;
+        } else {
+            s.offset = dataOffsetBase + currentDataOffset;
+            currentDataOffset += compressedSize;
+        }
+
+        // Alignment (usually 32 bytes in FMOD)
+        if (currentDataOffset % 32 != 0) {
+            currentDataOffset += (32 - (currentDataOffset % 32));
+        }
+
         s.size = compressedSize;
         s.headerOffset = currentSampleHeaderOffset;
         s.headerSize = sampleHeaderSize;
         samples.push_back(s);
 
-        currentDataOffset += compressedSize;
         currentSampleHeaderOffset += sampleHeaderSize;
     }
 
@@ -73,12 +99,21 @@ void ExtractFSB(const std::string& fsbPath) {
     CreateDirectoryIfNotExists(outDir);
 
     std::ifstream f(fsbPath, std::ios::binary);
+    f.seekg(0, std::ios::end);
+    size_t actualFileSize = (size_t)f.tellg();
+    f.seekg(0, std::ios::beg);
+
     for (auto& s : samples) {
+        if (s.offset >= actualFileSize) continue;
+        uint32_t toRead = s.size;
+        if (s.offset + toRead > actualFileSize) toRead = (uint32_t)(actualFileSize - s.offset);
+        if (toRead == 0) continue;
+
         std::ofstream sf(outDir + "/" + s.name + ".bin", std::ios::binary);
         f.seekg(s.offset);
-        std::vector<char> buf(s.size);
-        f.read(buf.data(), s.size);
-        sf.write(buf.data(), s.size);
+        std::vector<char> buf(toRead);
+        f.read(buf.data(), toRead);
+        sf.write(buf.data(), toRead);
         sf.close();
     }
     std::cout << "Extracted " << samples.size() << " samples to " << outDir << std::endl;
