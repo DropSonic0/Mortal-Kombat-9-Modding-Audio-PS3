@@ -102,7 +102,10 @@ bool PatchFSBSample(const std::string& fsbPath, const std::string& sampleName, c
     newData.seekg(0, std::ios::beg);
 
     if (newSize > it->size) {
-        std::cout << "Error: New sample data is larger than original (" << newSize << " > " << it->size << "). In-place patching failed." << std::endl;
+        std::cout << "ERROR: New audio is TOO LARGE for this slot!" << std::endl;
+        std::cout << "  Original size: " << it->size << " bytes" << std::endl;
+        std::cout << "  Your file:     " << newSize << " bytes" << std::endl;
+        std::cout << "  Please re-encode with lower quality to fit the original size." << std::endl;
         return false;
     }
 

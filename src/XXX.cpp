@@ -215,7 +215,10 @@ void PatchXXXAudio(const std::string& xxxPath, const std::string& sampleName, co
                             newData.seekg(0, std::ios::beg);
 
                             if (newSize > compressedSize) {
-                                std::cout << "New audio too large for " << sampleName << " (" << newSize << " > " << compressedSize << ")" << std::endl;
+                                std::cout << "ERROR: New audio is TOO LARGE for this slot!" << std::endl;
+                                std::cout << "  Original size: " << compressedSize << " bytes" << std::endl;
+                                std::cout << "  Your file:     " << newSize << " bytes" << std::endl;
+                                std::cout << "  Please re-encode with lower quality to fit the original size." << std::endl;
                                 return;
                             }
 
