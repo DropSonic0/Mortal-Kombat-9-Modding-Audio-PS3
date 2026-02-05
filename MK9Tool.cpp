@@ -70,12 +70,25 @@ void extract(string filename) {
         for (size_t i = 0; i < data.size() - 4; ++i) {
             if (memcmp(&data[i], "FSB4", 4) == 0) {
                 string audioName = filename + "_audio_" + to_string(audioCount++) + ".fsb";
-                cout << "  -> Se encontro y extrajo audio FSB4: " << audioName << " (Offset: 0x" << hex << i << dec << ")" << endl;
 
-                // Para simplificar, extraemos desde el tag hasta el final del bloque de datos
-                // En modding real, el usuario podria querer reemplazar esto exacto.
+                // Intentar leer el tamano real del FSB4
+                // Offset 8: tamano de headers de samples (4 bytes)
+                // Offset 12: tamano de los datos de audio (4 bytes)
+                uint32_t sampleHdrSize = *(uint32_t*)&data[i + 8];
+                uint32_t audioDataSize = *(uint32_t*)&data[i + 12];
+                // Nota: Los FSB4 en MK9 PS3 suelen ser Little Endian internamente
+
+                size_t fsbTotalSize = 24 + sampleHdrSize + audioDataSize;
+
+                // Verificamos que el tamano sea razonable
+                if (i + fsbTotalSize > data.size()) {
+                    fsbTotalSize = data.size() - i;
+                }
+
+                cout << "  -> Se encontro audio FSB4: " << audioName << " (Offset: 0x" << hex << i << ", Tamaño: 0x" << fsbTotalSize << dec << ")" << endl;
+
                 ofstream aOut(audioName, ios::binary);
-                aOut.write(&data[i], data.size() - i);
+                aOut.write(&data[i], fsbTotalSize);
                 aOut.close();
             }
         }
