@@ -8,6 +8,7 @@ void PrintUsage() {
     std::cout << "  Extraction: MK9Tool <file.xxx> OR MK9Tool <file.fsb>" << std::endl;
     std::cout << "  Packing:    MK9Tool <header.bin> <data.bin> <out.xxx>" << std::endl;
     std::cout << "  Injection:  MK9Tool inject <target_file> <new_asset> <offset_hex>" << std::endl;
+    std::cout << "  Replace FSB:MK9Tool replacefsb <xxx_file> <fsb_index> <new_fsb>" << std::endl;
     std::cout << "  Patching:   MK9Tool patch <xxx_file> <sample_name> <new_audio_bin>" << std::endl;
     std::cout << "  Patch FSB:  MK9Tool patchfsb <fsb_file> <sample_name> <new_audio_bin>" << std::endl;
     std::cout << "  Extr. FSB:  MK9Tool extractfsb <fsb_file>" << std::endl;
@@ -39,6 +40,18 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         PatchXXXAudio(argv[2], argv[3], argv[4]);
+    } else if (arg1 == "replacefsb") {
+        if (argc < 5) {
+            PrintUsage();
+            return 1;
+        }
+        try {
+            int index = std::stoi(argv[3]);
+            ReplaceXXXFSB(argv[2], index, argv[4]);
+        } catch (...) {
+            std::cout << "Invalid index format." << std::endl;
+            return 1;
+        }
     } else if (arg1 == "patchfsb") {
         if (argc < 5) {
             PrintUsage();
