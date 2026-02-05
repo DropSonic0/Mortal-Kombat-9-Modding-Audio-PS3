@@ -23,9 +23,14 @@ Option A (Easy): Replace a single sound by its name.
 Run: MK9Tool.exe patch <file.xxx> <sample_name> <your_new_sample.bin>
 *The new sample must be the raw data from your new FSB or a compatible encoded file.
 
-Option B (Advanced): Replace an entire sound bank.
+Option B (Advanced): Replace an entire sound bank by offset.
 Run: MK9Tool.exe inject <file.xxx> <your_new_bank.fsb> <offset_hex>
 *Use the offset shown by MK9Tool during extraction.
+
+Option C (New): Replace an entire sound bank by index.
+Run: MK9Tool.exe replacefsb <file.xxx> <fsb_index> <your_new_bank.fsb>
+*Example: MK9Tool.exe replacefsb char_jade.xxx 0 new_audio.fsb
+*The index starts at 0 for the first FSB found in the file.
 
 4. REBUILDING .XXX
 Run: MK9Tool.exe <header.bin> <data.bin> <new_file.xxx>
