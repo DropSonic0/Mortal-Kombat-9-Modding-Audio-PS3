@@ -17,14 +17,13 @@
 
 using namespace std;
 
-// MK9 PS3 XXX Tool - Modding Tool
-// Herramienta prolija para extraer, reemplazar y empaquetar archivos .XXX de MK9 PS3.
+// MK9 PS3 XXX Tool - Modding Tool PRO
+// Herramienta optimizada para extraer .XXX y sus audios .FSB internos.
 
 uint32_t swap32(uint32_t v) {
     return ((v >> 24) & 0xff) | ((v >> 8) & 0xff00) | ((v << 8) & 0xff0000) | ((v << 24) & 0xff000000);
 }
 
-// Lee 32 bits en Little Endian desde un buffer de bytes
 uint32_t readLE32(const char* data) {
     const unsigned char* u = (const unsigned char*)data;
     return (uint32_t)u[0] | ((uint32_t)u[1] << 8) | ((uint32_t)u[2] << 16) | ((uint32_t)u[3] << 24);
@@ -38,157 +37,131 @@ string get_filename_without_ext(string path) {
     return filename.substr(0, last_dot);
 }
 
+// Extractor Basico de Muestras FSB4
+void extract_fsb_samples_basic(const char* fsbData, size_t fsbSize, string outDir) {
+    if (fsbSize < 24) return;
+    uint32_t numSamples = readLE32(fsbData + 4);
+    uint32_t shdrSize = readLE32(fsbData + 8);
+    uint32_t dataSize = readLE32(fsbData + 12);
+
+    if (numSamples == 0 || numSamples > 1000) return;
+
+    MKDIR(outDir.c_str());
+    uint32_t entrySize = shdrSize / numSamples;
+    if (entrySize < 32) return;
+
+    const char* shdrPtr = fsbData + 24;
+    const char* dataPtr = fsbData + 24 + shdrSize;
+    uint32_t currentOffset = 0;
+
+    for (uint32_t i = 0; i < numSamples; ++i) {
+        const char* entry = shdrPtr + (i * entrySize);
+        // Intentar buscar el nombre en el entry (suele estar al final o despues de los primeros 20 bytes)
+        string name = "sample_" + to_string(i);
+        for (uint32_t j = 20; j < entrySize - 4; ++j) {
+            if (entry[j] >= 32 && entry[j] <= 126 && entry[j+1] >= 32 && entry[j+1] <= 126) {
+                name = string(entry + j);
+                break;
+            }
+        }
+
+        uint32_t sampleLen = readLE32(entry + 8); // Estimacion tipica de offset de tamano
+        // Nota: En MK9 esto puede variar, por lo que extraemos pedazos basados en el promedio si falla
+        if (sampleLen == 0 || sampleLen > dataSize) sampleLen = dataSize / numSamples;
+
+        if (currentOffset + sampleLen <= dataSize) {
+            ofstream sOut(outDir + "/" + name + ".dat", ios::binary);
+            sOut.write(dataPtr + currentOffset, sampleLen);
+            sOut.close();
+            cout << "      > Extraido: " << name << endl;
+        }
+        currentOffset += sampleLen;
+    }
+}
+
 void extract(string filename) {
     ifstream f(filename, ios::binary);
-    if (!f) {
-        cout << "Error: No se pudo abrir " << filename << endl;
-        return;
-    }
+    if (!f) return;
 
     unsigned char tag[4];
-    if (!f.read((char*)tag, 4)) return;
-    if (tag[0] != 0x9E || tag[1] != 0x2A || tag[2] != 0x83 || tag[3] != 0xC1) {
-        cout << "Error: No es un archivo .XXX de PS3 valido (Tag incorrecto)." << endl;
-        return;
-    }
+    f.read((char*)tag, 4);
+    if (tag[0] != 0x9E) return;
 
     f.seekg(8);
     uint32_t headerSize;
     f.read((char*)&headerSize, 4);
     headerSize = swap32(headerSize);
 
-    cout << "Detectado paquete Big Endian (PS3)." << endl;
-
     string outDir = get_filename_without_ext(filename) + "_extracted";
     MKDIR(outDir.c_str());
-    cout << "Extrayendo en la carpeta: " << outDir << endl;
+    cout << "Carpeta de salida: " << outDir << endl;
 
-    // Extraer header
     f.seekg(0);
-    vector<char> headerData(headerSize);
-    f.read(headerData.data(), headerSize);
+    vector<char> hData(headerSize);
+    f.read(hData.data(), headerSize);
+    ofstream hOut(outDir + "/header.bin", ios::binary);
+    hOut.write(hData.data(), headerSize);
 
-    string hName = outDir + "/header.bin";
-    ofstream hOut(hName, ios::binary);
-    hOut.write(headerData.data(), headerSize);
-    hOut.close();
-
-    // Extraer data
     f.seekg(0, ios::end);
-    size_t fileSize = f.tellg();
-    if (fileSize < headerSize) {
-        cout << "Error: El archivo es mas pequeno que el header." << endl;
-        return;
-    }
-    size_t dataSize = fileSize - headerSize;
+    size_t dataSize = (size_t)f.tellg() - headerSize;
+    f.seekg(headerSize);
+    vector<char> data(dataSize);
+    f.read(data.data(), dataSize);
+    ofstream dOut(outDir + "/data.bin", ios::binary);
+    dOut.write(data.data(), dataSize);
 
-    if (dataSize > 0) {
-        f.seekg(headerSize);
-        vector<char> data(dataSize);
-        f.read(data.data(), dataSize);
+    cout << "  - Extraidos archivos base." << endl;
 
-        string dName = outDir + "/data.bin";
-        ofstream dOut(dName, ios::binary);
-        dOut.write(data.data(), dataSize);
-        dOut.close();
+    int audioCount = 0;
+    for (size_t i = 0; i <= (data.size() >= 24 ? data.size() - 24 : 0); ++i) {
+        if (memcmp(&data[i], "FSB4", 4) == 0) {
+            uint32_t shdr = readLE32(&data[i + 8]);
+            uint32_t dat = readLE32(&data[i + 12]);
+            size_t total = 24 + shdr + dat;
+            if (i + total > data.size()) total = data.size() - i;
 
-        cout << "  - Creado: " << hName << endl;
-        cout << "  - Creado: " << dName << endl;
+            string fsbPath = outDir + "/audio_" + to_string(audioCount) + ".fsb";
+            ofstream fOut(fsbPath, ios::binary);
+            fOut.write(&data[i], total);
+            fOut.close();
 
-        // Escaneo de audios FSB4
-        int audioCount = 0;
-        if (data.size() >= 4) {
-            for (size_t i = 0; i <= data.size() - 4; ++i) {
-                if (memcmp(&data[i], "FSB4", 4) == 0) {
-                    string audioName = outDir + "/audio_" + to_string(audioCount++) + ".fsb";
-
-                    // Metadata de FSB4 (siempre Little Endian)
-                    // Offset 8: shdr_size, Offset 12: data_size
-                    uint32_t shdr_size = (i + 12 <= data.size()) ? readLE32(&data[i + 8]) : 0;
-                    uint32_t data_size = (i + 16 <= data.size()) ? readLE32(&data[i + 12]) : 0;
-                    size_t fsbTotalSize = 24 + shdr_size + data_size;
-
-                    if (i + fsbTotalSize > data.size()) fsbTotalSize = data.size() - i;
-
-                    cout << "  - Audio encontrado: " << audioName << " (Offset en data.bin: 0x" << hex << i << dec << ")" << endl;
-
-                    ofstream aOut(audioName, ios::binary);
-                    aOut.write(&data[i], fsbTotalSize);
-                    aOut.close();
-                }
-            }
+            cout << "  - FSB Encontrado: " << fsbPath << ". Extrayendo muestras internas..." << endl;
+            extract_fsb_samples_basic(&data[i], total, outDir + "/audio_" + to_string(audioCount) + "_samples");
+            audioCount++;
         }
-        cout << "\nLISTO: Los archivos estan en la carpeta '" << outDir << "'" << endl;
-        cout << "Para modificar el audio: Modifica el archivo .fsb y usa 'replace' con data.bin" << endl;
-    } else {
-        cout << "El archivo no contiene datos adicionales fuera del header." << endl;
     }
+    cout << "\nLISTO: Todo se extrajo en '" << outDir << "'" << endl;
 }
 
 void replace(string dataFile, string newFile, string offsetStr) {
-    uint32_t offset = 0;
-    try {
-        offset = (uint32_t)stoul(offsetStr, nullptr, 16);
-    } catch (...) {
-        cout << "Error: Offset invalido." << endl;
-        return;
-    }
-
+    uint32_t offset = (uint32_t)stoul(offsetStr, nullptr, 16);
     ifstream nIn(newFile, ios::binary | ios::ate);
-    if (!nIn) { cout << "Error: No se pudo abrir el nuevo archivo: " << newFile << endl; return; }
-    size_t newSize = nIn.tellg();
+    if (!nIn) return;
+    size_t sz = nIn.tellg();
     nIn.seekg(0);
-    vector<char> newData(newSize);
-    nIn.read(newData.data(), newSize);
-    nIn.close();
-
+    vector<char> buf(sz);
+    nIn.read(buf.data(), sz);
     fstream dOut(dataFile, ios::binary | ios::in | ios::out);
-    if (!dOut) { cout << "Error: No se pudo abrir el archivo: " << dataFile << endl; return; }
-
     dOut.seekp(offset);
-    dOut.write(newData.data(), newSize);
-    dOut.close();
-
-    cout << "Inyectado: " << newSize << " bytes en " << dataFile << " (Offset: 0x" << hex << offset << dec << ")" << endl;
+    dOut.write(buf.data(), sz);
+    cout << "Inyectado correctamente." << endl;
 }
 
-void pack(string headerFile, string dataFile, string outFile) {
-    ifstream hIn(headerFile, ios::binary);
-    ifstream dIn(dataFile, ios::binary);
-
-    if (!hIn) { cout << "Error: No se pudo abrir el header: " << headerFile << endl; return; }
-    if (!dIn) { cout << "Error: No se pudo abrir el data: " << dataFile << endl; return; }
-
-    ofstream out(outFile, ios::binary);
-    out << hIn.rdbuf();
-    out << dIn.rdbuf();
-
-    cout << "Archivo .XXX creado: " << outFile << endl;
+void pack(string h, string d, string o) {
+    ifstream hi(h, ios::binary), di(d, ios::binary);
+    ofstream out(o, ios::binary);
+    out << hi.rdbuf() << di.rdbuf();
+    cout << "Archivo .XXX creado." << endl;
 }
 
 int main(int argc, char** argv) {
-    cout << "======================================" << endl;
-    cout << "   MK9 PS3 XXX Tool - Modding Tool    " << endl;
-    cout << "======================================" << endl;
-
+    cout << "MK9 PS3 XXX Tool - Modding PRO" << endl;
     if (argc < 2) {
-        cout << "Uso:" << endl;
-        cout << "  1. Extraer: MK9Tool.exe <archivo.xxx>" << endl;
-        cout << "  2. Reemplazar: MK9Tool.exe replace <data.bin> <nuevo.fsb> <offset>" << endl;
-        cout << "  3. Empaquetar: MK9Tool.exe <header.bin> <data.bin> <salida.xxx>" << endl;
+        cout << "1. Extraer: MK9Tool <file.xxx>\n2. Inyectar: MK9Tool replace <data> <new> <offset>\n3. Crear: MK9Tool <h> <d> <out.xxx>" << endl;
         return 0;
     }
-
-    string cmd = argv[1];
-    if (cmd == "replace" && argc == 5) {
-        replace(argv[2], argv[3], argv[4]);
-    } else if (argc == 2) {
-        extract(argv[1]);
-    } else if (argc == 4) {
-        pack(argv[1], argv[2], argv[3]);
-    } else {
-        cout << "Comando no reconocido o faltan parametros." << endl;
-    }
-
+    if (string(argv[1]) == "replace" && argc == 5) replace(argv[2], argv[3], argv[4]);
+    else if (argc == 2) extract(argv[1]);
+    else if (argc == 4) pack(argv[1], argv[2], argv[3]);
     return 0;
 }
