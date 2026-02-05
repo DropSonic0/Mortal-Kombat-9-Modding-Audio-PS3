@@ -49,7 +49,7 @@ int main(int argc, char* argv[]) {
             int index = std::stoi(argv[3]);
             ReplaceXXXFSB(argv[2], index, argv[4]);
         } catch (...) {
-            std::cout << "Invalid index format." << std::endl;
+            std::cout << "Invalid index format. The index must be a number (e.g. 0, 1, 2...)" << std::endl;
             return 1;
         }
     } else if (arg1 == "patchfsb") {
