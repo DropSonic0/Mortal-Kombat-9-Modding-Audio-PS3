@@ -17,8 +17,9 @@
 
 using namespace std;
 
-// MK9 PS3 XXX Tool - Modding Suite v6
-// Herramienta optimizada para extraer, parchar y reconstruir archivos de MK9 PS3.
+// MK9 PS3 XXX Tool - Modding Suite v6 FINAL
+// Herramienta completa para extraer, parchar y reconstruir archivos de MK9 PS3.
+// Especialmente diseñada para manejar los 3 FSBs (incluyendo Streaming Banks).
 
 uint32_t swap32(uint32_t v) {
     return ((v >> 24) & 0xff) | ((v >> 8) & 0xff00) | ((v << 8) & 0xff0000) | ((v << 24) & 0xff000000);
@@ -42,6 +43,7 @@ string get_filename_without_ext(string path) {
     return filename.substr(0, last_dot);
 }
 
+// Extractor de muestras de FSB4 (Integrado)
 void extract_fsb_samples(const char* fsbData, size_t fsbSize, string outDir) {
     if (fsbSize < 24) return;
     uint32_t numSamples = readLE32(fsbData + 4);
@@ -73,7 +75,7 @@ void extract_fsb_samples(const char* fsbData, size_t fsbSize, string outDir) {
             ofstream sOut(outDir + "/" + name + ".dat", ios::binary);
             sOut.write(dataPtr + currentOffset, sampleLen);
             sOut.close();
-            cout << "      > Sonido: " << name << ".dat" << endl;
+            cout << "      > Sonido extraido: " << name << endl;
         }
         currentOffset += sampleLen;
         shdrPtr += entrySize;
@@ -82,54 +84,63 @@ void extract_fsb_samples(const char* fsbData, size_t fsbSize, string outDir) {
 
 void extract(string filename) {
     ifstream f(filename, ios::binary);
-    if (!f) return;
+    if (!f) { cout << "Error: No se pudo abrir el archivo." << endl; return; }
+
     unsigned char tag[4];
     f.read((char*)tag, 4);
-    if (tag[0] != 0x9E) { cout << "Error: No es un archivo .XXX de PS3." << endl; return; }
+    if (tag[0] != 0x9E) { cout << "Error: No es un archivo .XXX de PS3 (Magic incorrecta)." << endl; return; }
 
     f.seekg(8);
     uint32_t headerSize;
     f.read((char*)&headerSize, 4);
     headerSize = swap32(headerSize);
 
+    cout << "Unreal Header Size: " << headerSize << " bytes." << endl;
+
     string outDir = get_filename_without_ext(filename) + "_extracted";
     MKDIR(outDir.c_str());
     cout << "Directorio de salida: " << outDir << endl;
 
+    // Extraer header y data bases
     f.seekg(0);
     vector<char> hData(headerSize);
     f.read(hData.data(), headerSize);
     ofstream hOut(outDir + "/header.bin", ios::binary);
     hOut.write(hData.data(), headerSize);
+    hOut.close();
 
     f.seekg(0, ios::end);
     size_t fileSize = f.tellg();
-    if (fileSize < headerSize) return;
     size_t dataSize = fileSize - headerSize;
-
     f.seekg(headerSize);
     vector<char> data(dataSize);
     f.read(data.data(), dataSize);
     ofstream dOut(outDir + "/data.bin", ios::binary);
     dOut.write(data.data(), dataSize);
+    dOut.close();
 
-    cout << "  - Archivos base extraidos." << endl;
+    cout << "  - Extraidos archivos base (header.bin y data.bin)." << endl;
 
+    // Escaneo AGRESIVO de FSB (para encontrar los 3 que mencionaste)
     int audioCount = 0;
     for (size_t i = 0; i <= (data.size() >= 24 ? data.size() - 24 : 0); ++i) {
         if (memcmp(&data[i], "FSB", 3) == 0) {
+            uint32_t numS = readLE32(&data[i + 4]);
             uint32_t shdr = readLE32(&data[i + 8]);
-            uint32_t datSize = readLE32(&data[i + 12]);
-            size_t expectedTotal = 24 + shdr + datSize;
+            uint32_t datS = readLE32(&data[i + 12]);
+            size_t expectedTotal = 24 + shdr + datS;
 
             size_t available = data.size() - i;
             size_t toWrite = min(expectedTotal, available);
 
-            string fsbPath = outDir + "/audio_" + to_string(audioCount) + ".fsb";
+            string fsbName = "audio_" + to_string(audioCount) + ".fsb";
+            string fsbPath = outDir + "/" + fsbName;
+
             vector<char> fsbFullData(&data[i], &data[i] + toWrite);
 
+            // REPARACION DE TRUNCADO (Streaming Banks)
             if (expectedTotal > available) {
-                cout << "  - AVISO: El FSB_" << audioCount << " parece estar truncado (Streaming Bank). Reparando con ceros..." << endl;
+                cout << "  [!] FSB " << audioCount << " truncado (Streaming). Rellenando con ceros..." << endl;
                 fsbFullData.resize(expectedTotal, 0);
             }
 
@@ -137,53 +148,74 @@ void extract(string filename) {
             fOut.write(fsbFullData.data(), fsbFullData.size());
             fOut.close();
 
-            cout << "  - FSB Encontrado: audio_" << audioCount << ".fsb (Offset: 0x" << hex << headerSize + i << dec << ")" << endl;
+            cout << "  - FSB Encontrado: " << fsbName << " (Offset en .XXX: 0x" << hex << headerSize + i << dec << ")" << endl;
+
+            // Extraer muestras individuales
             extract_fsb_samples(fsbFullData.data(), fsbFullData.size(), outDir + "/audio_" + to_string(audioCount) + "_samples");
+
             audioCount++;
-            i += 24; // Saltar cabecera
+            i += 24; // Saltar cabecera para acelerar
         }
     }
-    cout << "\nLISTO: Se encontraron " << audioCount << " archivos FSB." << endl;
+
+    if (audioCount == 0) {
+        cout << "No se encontraron firmas FSB en el bloque de datos." << endl;
+    } else {
+        cout << "\nLISTO: Se han extraido " << audioCount << " archivos FSB." << endl;
+        if (audioCount < 3) cout << "(Nota: Si esperabas 3, los otros pueden ser externos o estar en el header)." << endl;
+    }
 }
 
-void inject(string targetFile, string sourceFile, string offsetStr) {
+void inject(string xxxFile, string newFsbFile, string offsetStr) {
     uint32_t offset = (uint32_t)stoul(offsetStr, nullptr, 16);
-    ifstream sIn(sourceFile, ios::binary | ios::ate);
-    if (!sIn) return;
-    size_t sz = sIn.tellg();
-    sIn.seekg(0);
+    ifstream nIn(newFsbFile, ios::binary | ios::ate);
+    if (!nIn) { cout << "Error abriendo nuevo FSB." << endl; return; }
+    size_t sz = nIn.tellg();
+    nIn.seekg(0);
     vector<char> buf(sz);
-    sIn.read(buf.data(), sz);
+    nIn.read(buf.data(), sz);
 
-    fstream tOut(targetFile, ios::binary | ios::in | ios::out);
-    tOut.seekp(offset);
-    tOut.write(buf.data(), sz);
-    cout << "Inyectado correctamente en 0x" << hex << offset << dec << endl;
+    fstream f(xxxFile, ios::binary | ios::in | ios::out);
+    if (!f) { cout << "Error abriendo " << xxxFile << endl; return; }
+    f.seekp(offset);
+    f.write(buf.data(), sz);
+    cout << "Inyectado correctamente en el offset 0x" << hex << offset << dec << endl;
 }
 
 void pack(string h, string d, string o) {
     ifstream hi(h, ios::binary), di(d, ios::binary);
+    if (!hi || !di) { cout << "Error al abrir componentes." << endl; return; }
     ofstream out(o, ios::binary);
     out << hi.rdbuf() << di.rdbuf();
-    cout << "Creado: " << o << endl;
+    cout << "Archivo .XXX reconstruido: " << o << endl;
 }
 
 int main(int argc, char** argv) {
     cout << "======================================" << endl;
-    cout << "   MK9 PS3 XXX Tool - Modding Suite v6" << endl;
+    cout << "   MK9 PS3 XXX Tool - Modding Suite   " << endl;
     cout << "======================================" << endl;
 
     if (argc < 2) {
         cout << "COMANDOS:" << endl;
         cout << "  1. Extraer:     MK9Tool.exe <archivo.xxx>" << endl;
-        cout << "  2. Inyectar:    MK9Tool.exe inject <archivo.xxx> <nuevo_archivo> <offset_hex>" << endl;
+        cout << "  2. Inyectar:    MK9Tool.exe inject <archivo.xxx> <nuevo.fsb> <offset_hex>" << endl;
         cout << "  3. Reconstruir: MK9Tool.exe <header.bin> <data.bin> <salida.xxx>" << endl;
+        cout << "\nAYUDA PARA AUDIO:" << endl;
+        cout << "  - Extrae el .xxx y usa el 'Offset' que te da el programa." << endl;
+        cout << "  - Si el FSB daba error antes, ahora se extrae reparado (con ceros)." << endl;
+        cout << "  - Para unir tu propio audio, usa 'inject' con el offset del FSB original." << endl;
         return 0;
     }
 
     string cmd = argv[1];
-    if (cmd == "inject" && argc == 5) inject(argv[2], argv[3], argv[4]);
-    else if (argc == 2) extract(argv[1]);
-    else if (argc == 4) pack(argv[1], argv[2], argv[3]);
+    if (cmd == "inject" && argc == 5) {
+        inject(argv[2], argv[3], argv[4]);
+    } else if (argc == 2) {
+        extract(argv[1]);
+    } else if (argc == 4) {
+        pack(argv[1], argv[2], argv[3]);
+    } else {
+        cout << "Uso incorrecto. Ejecuta sin parametros para ver la ayuda." << endl;
+    }
     return 0;
 }
