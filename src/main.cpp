@@ -9,6 +9,7 @@ void PrintUsage() {
     std::cout << "  Packing:    MK9Tool <header.bin> <data.bin> <out.xxx>" << std::endl;
     std::cout << "  Injection:  MK9Tool inject <target_file> <new_asset> <offset_hex>" << std::endl;
     std::cout << "  Patching:   MK9Tool patch <xxx_file> <sample_name> <new_audio_bin>" << std::endl;
+    std::cout << "  Patch FSB:  MK9Tool patchfsb <fsb_file> <sample_name> <new_audio_bin>" << std::endl;
 }
 
 int main(int argc, char* argv[]) {
@@ -37,6 +38,12 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         PatchXXXAudio(argv[2], argv[3], argv[4]);
+    } else if (arg1 == "patchfsb") {
+        if (argc < 5) {
+            PrintUsage();
+            return 1;
+        }
+        PatchFSBSample(argv[2], argv[3], argv[4]);
     } else if (argc == 2) {
         ExtractXXX(argv[1]);
     } else if (argc == 4) {

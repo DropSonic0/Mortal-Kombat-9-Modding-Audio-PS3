@@ -19,6 +19,30 @@
 uint32_t SwapEndian(uint32_t val);
 uint16_t SwapEndian(uint16_t val);
 
+inline uint32_t LE32(uint32_t v) {
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    return SwapEndian(v);
+#else
+    return v;
+#endif
+}
+
+inline uint16_t LE16(uint16_t v) {
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    return SwapEndian(v);
+#else
+    return v;
+#endif
+}
+
+inline uint32_t BE32(uint32_t v) {
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    return v;
+#else
+    return SwapEndian(v);
+#endif
+}
+
 bool FileExists(const std::string& name);
 std::string GetFileNameWithoutExtension(const std::string& path);
 void CreateDirectoryIfNotExists(const std::string& path);

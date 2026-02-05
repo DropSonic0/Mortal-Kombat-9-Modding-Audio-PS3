@@ -9,12 +9,17 @@ std::vector<FSBSample> ParseFSB(const std::string& fsbPath) {
 
     FSB4_HEADER header;
     f.read((char*)&header, sizeof(header));
-    if (strncmp(header.magic, "FSB4", 4) != 0) return samples;
+    if (strncmp(header.magic, "FSB4", 4) != 0) {
+        if (strncmp(header.magic, "FSB5", 4) == 0) {
+            std::cout << "FSB5 detected in " << fsbPath << ". FSB5 parsing is not fully implemented yet." << std::endl;
+        }
+        return samples;
+    }
 
     // FSB4 headers are Little-Endian in MK9 PS3
-    uint32_t numSamples = header.numsamples;
-    uint32_t shdrSize = header.shdr_size;
-    uint32_t dataSize = header.data_size;
+    uint32_t numSamples = LE32(header.numsamples);
+    uint32_t shdrSize = LE32(header.shdr_size);
+    uint32_t dataSize = LE32(header.data_size);
 
     uint32_t currentSampleHeaderOffset = sizeof(FSB4_HEADER);
     uint32_t dataOffsetBase = sizeof(FSB4_HEADER) + shdrSize;
@@ -24,6 +29,7 @@ std::vector<FSBSample> ParseFSB(const std::string& fsbPath) {
         f.seekg(currentSampleHeaderOffset);
         uint16_t sampleHeaderSize;
         f.read((char*)&sampleHeaderSize, 2);
+        sampleHeaderSize = LE16(sampleHeaderSize);
 
         char name[31];
         memset(name, 0, 31);
@@ -38,6 +44,7 @@ std::vector<FSBSample> ParseFSB(const std::string& fsbPath) {
         f.seekg(currentSampleHeaderOffset + 2 + 30 + 4);
         uint32_t compressedSize;
         f.read((char*)&compressedSize, 4);
+        compressedSize = LE32(compressedSize);
 
         FSBSample s;
         s.name = name;
@@ -78,6 +85,10 @@ bool PatchFSBSample(const std::string& fsbPath, const std::string& sampleName, c
     }
 
     std::fstream fsbFile(fsbPath, std::ios::binary | std::ios::in | std::ios::out);
+    if (!fsbFile.is_open()) {
+        std::cout << "Failed to open " << fsbPath << " for writing." << std::endl;
+        return false;
+    }
     fsbFile.seekp(it->offset);
 
     std::vector<char> buffer(newSize);
