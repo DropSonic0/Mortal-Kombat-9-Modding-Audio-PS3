@@ -257,3 +257,97 @@ void PatchXXXAudio(const std::string& xxxPath, const std::string& sampleName, co
         std::cout << "Sample " << sampleName << " not found in " << xxxPath << std::endl;
     }
 }
+
+/**
+ * Replaces an FSB bank within a XXX package at a given index.
+ * Note: This is an in-place replacement. It does not update the XXX package's
+ * internal object tables/metadata. It uses padding if the new FSB is smaller.
+ */
+void ReplaceXXXFSB(const std::string& xxxPath, int targetIndex, const std::string& newFsbPath) {
+    std::ifstream f(xxxPath, std::ios::binary);
+    if (!f.is_open()) {
+        std::cout << "Failed to open " << xxxPath << std::endl;
+        return;
+    }
+
+    int fsbCount = 0;
+    bool replaced = false;
+
+    while (true) {
+        char c;
+        if (!f.get(c)) break;
+        if (c == 'F') {
+            char sig[3];
+            if (f.read(sig, 3)) {
+                if (sig[0] == 'S' && sig[1] == 'B' && (sig[2] == '4' || sig[2] == '5')) {
+                    size_t startPos = (size_t)f.tellg() - 4;
+
+                    if (fsbCount == targetIndex) {
+                        uint32_t totalFSBSize = 0;
+                        if (sig[2] == '4') {
+                            FSB4_HEADER fsbHeader;
+                            f.seekg(startPos);
+                            f.read((char*)&fsbHeader, sizeof(fsbHeader));
+                            totalFSBSize = sizeof(FSB4_HEADER) + LE32(fsbHeader.shdr_size) + LE32(fsbHeader.data_size);
+                        } else {
+                            std::cout << "FSB5 replacement not fully supported (unknown original size)." << std::endl;
+                            return;
+                        }
+
+                        f.seekg(0, std::ios::end);
+                        size_t fileSize = (size_t)f.tellg();
+                        size_t availableSpace = fileSize - startPos;
+                        
+                        // If it's a streaming bank, the actual space in XXX might be smaller than totalFSBSize
+                        uint32_t maxAllowedSize = (totalFSBSize < availableSpace) ? totalFSBSize : (uint32_t)availableSpace;
+
+                        std::ifstream newF(newFsbPath, std::ios::binary);
+                        if (!newF.is_open()) {
+                            std::cout << "Failed to open new FSB: " << newFsbPath << std::endl;
+                            return;
+                        }
+                        newF.seekg(0, std::ios::end);
+                        uint32_t newSize = (uint32_t)newF.tellg();
+                        newF.seekg(0, std::ios::beg);
+
+                        if (newSize > maxAllowedSize) {
+                            std::cout << "Error: New FSB is larger than available space (" << newSize << " > " << maxAllowedSize << ")" << std::endl;
+                            return;
+                        }
+
+                        std::fstream xxxF(xxxPath, std::ios::binary | std::ios::in | std::ios::out);
+                        xxxF.seekp(startPos);
+                        xxxF << newF.rdbuf();
+
+                        if (newSize < maxAllowedSize) {
+                            std::vector<char> padding(maxAllowedSize - newSize, 0);
+                            xxxF.write(padding.data(), padding.size());
+                        }
+
+                        std::cout << "Successfully replaced FSB index " << targetIndex << " in " << xxxPath << " (Offset: 0x" << std::hex << startPos << std::dec << ")" << std::endl;
+                        replaced = true;
+                        break;
+                    }
+
+                    // Not the index we want, skip it
+                    if (sig[2] == '4') {
+                        FSB4_HEADER fsbHeader;
+                        f.seekg(startPos);
+                        f.read((char*)&fsbHeader, sizeof(fsbHeader));
+                        uint32_t size = sizeof(FSB4_HEADER) + LE32(fsbHeader.shdr_size) + LE32(fsbHeader.data_size);
+                        f.seekg(startPos + size);
+                    } else {
+                         f.seekg(startPos + 4);
+                    }
+                    fsbCount++;
+                } else {
+                    f.seekg((size_t)f.tellg() - 3);
+                }
+            }
+        }
+    }
+
+    if (!replaced) {
+        std::cout << "FSB with index " << targetIndex << " not found in " << xxxPath << std::endl;
+    }
+}
