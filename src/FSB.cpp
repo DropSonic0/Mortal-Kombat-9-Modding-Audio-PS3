@@ -28,7 +28,7 @@ std::vector<FSBSample> ParseFSB(const std::string& fsbPath, uint32_t baseOffset)
     uint32_t currentDataOffset = 0;
 
     for (uint32_t i = 0; i < numSamples; ++i) {
-        f.seekg(currentSampleHeaderOffset);
+        f.seekg(baseOffset + currentSampleHeaderOffset);
         uint16_t sampleHeaderSize;
         f.read((char*)&sampleHeaderSize, 2);
         sampleHeaderSize = LE16(sampleHeaderSize);
@@ -46,7 +46,7 @@ std::vector<FSBSample> ParseFSB(const std::string& fsbPath, uint32_t baseOffset)
         // 44: loopstart(4), 48: loopend(4), 52: mode(4), 56: def_freq(4), 60: def_vol(2),
         // 62: def_pan(2), 64: def_pri(2), 66: num_channels(2)
 
-        f.seekg(currentSampleHeaderOffset + 32);
+        f.seekg(baseOffset + currentSampleHeaderOffset + 32);
         uint32_t numSamples;
         f.read((char*)&numSamples, 4);
         numSamples = LE32(numSamples);
@@ -71,7 +71,7 @@ std::vector<FSBSample> ParseFSB(const std::string& fsbPath, uint32_t baseOffset)
         f.read((char*)&frequency, 4);
         frequency = (int32_t)LE32((uint32_t)frequency);
 
-        f.seekg(currentSampleHeaderOffset + 66);
+        f.seekg(baseOffset + currentSampleHeaderOffset + 66);
         uint16_t channels;
         f.read((char*)&channels, 2);
         channels = LE16(channels);
