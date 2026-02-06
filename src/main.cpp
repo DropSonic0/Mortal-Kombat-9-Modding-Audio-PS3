@@ -10,6 +10,7 @@ void PrintUsage() {
     std::cout << "  Injection:  MK9Tool inject <target_file> <new_asset> <offset_hex>" << std::endl;
     std::cout << "  Replace FSB:MK9Tool replacefsb <xxx_file> <fsb_index> <new_fsb>" << std::endl;
     std::cout << "  Patch All:  MK9Tool patchall <xxx_file> <folder_with_bins>" << std::endl;
+    std::cout << "  Patch FSBs: MK9Tool patchfromfsb <xxx_file> <source_fsb>" << std::endl;
     std::cout << "  Patching:   MK9Tool patch <xxx_file> <sample_name> <new_audio_bin>" << std::endl;
     std::cout << "  Patch FSB:  MK9Tool patchfsb <fsb_file> <sample_name> <new_audio_bin>" << std::endl;
     std::cout << "  Patch FSBIdx:MK9Tool patchfsbidx <fsb_file> <sample_idx> <new_audio_bin>" << std::endl;
@@ -49,6 +50,17 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         PatchAllXXXAudio(argv[2], argv[3]);
+    } else if (arg1 == "patchfromfsb") {
+        if (argc < 4) {
+            PrintUsage();
+            return 1;
+        }
+        std::string target = argv[2];
+        if (target.find(".xxx") != std::string::npos || target.find(".XXX") != std::string::npos) {
+            PatchXXXFromSourceFSB(argv[2], argv[3]);
+        } else {
+            PatchFSBFromSource(argv[2], argv[3]);
+        }
     } else if (arg1 == "replacefsb") {
         if (argc < 5) {
             PrintUsage();

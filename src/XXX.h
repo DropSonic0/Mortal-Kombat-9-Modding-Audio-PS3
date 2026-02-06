@@ -9,6 +9,7 @@ void InjectAsset(const std::string& targetPath, const std::string& assetPath, ui
 void PatchXXXAudio(const std::string& xxxPath, const std::string& sampleName, const std::string& newAudioPath);
 void PatchXXXAudioByIndex(const std::string& xxxPath, int fsbIndex, int sampleIndex, const std::string& newAudioPath);
 void PatchAllXXXAudio(const std::string& xxxPath, const std::string& folderPath);
+void PatchXXXFromSourceFSB(const std::string& xxxPath, const std::string& sourceFsbPath);
 void ReplaceXXXFSB(const std::string& xxxPath, int targetIndex, const std::string& newFsbPath);
 
 #endif

@@ -22,11 +22,21 @@ struct FSBSample {
     uint32_t size;
     uint32_t headerOffset;
     uint32_t headerSize;
+
+    // Metadata
+    uint32_t numSamples;
+    uint32_t uncompressedSize;
+    uint32_t loopStart;
+    uint32_t loopEnd;
+    uint32_t mode;
+    int32_t frequency;
+    uint16_t channels;
 };
 
 std::vector<FSBSample> ParseFSB(const std::string& fsbPath, uint32_t baseOffset = 0);
 void ExtractFSB(const std::string& fsbPath, bool swapEndian = false);
 bool PatchFSBSample(const std::string& fsbPath, const std::string& sampleName, const std::string& newSampleDataPath);
 bool PatchFSBSampleByIndex(const std::string& fsbPath, int sampleIndex, const std::string& newSampleDataPath);
+bool PatchFSBFromSource(const std::string& targetPath, const std::string& sourcePath);
 
 #endif

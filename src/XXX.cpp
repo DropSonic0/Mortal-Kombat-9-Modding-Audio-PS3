@@ -228,6 +228,10 @@ void PatchXXXAudio(const std::string& xxxPath, const std::string& sampleName, co
                                 return;
                             }
 
+                            if (newSize < actualDataSize / 1.5) {
+                                std::cout << "Warning: New data is much smaller than the original slot. If the sound is corrupt, use 'patchfromfsb' with a source FSB to update metadata (channels/frequency)." << std::endl;
+                            }
+
                             std::fstream xxxFile(xxxPath, std::ios::binary | std::ios::in | std::ios::out);
                             xxxFile.seekp(dataOffsetBase + currentDataOffset);
                             
@@ -341,6 +345,10 @@ void PatchXXXAudioByIndex(const std::string& xxxPath, int targetFsbIndex, int ta
                                 if (newSize > actualDataSize) {
                                     std::cout << "New audio too large for " << name << " (" << newSize << " > " << actualDataSize << ")" << std::endl;
                                     return;
+                                }
+
+                                if (newSize < actualDataSize / 1.5) {
+                                    std::cout << "Warning: New data is much smaller than the original slot. If the sound is corrupt, use 'patchfromfsb' with a source FSB to update metadata (channels/frequency)." << std::endl;
                                 }
 
                                 std::fstream xxxFile(xxxPath, std::ios::binary | std::ios::in | std::ios::out);
@@ -463,6 +471,9 @@ void PatchAllXXXAudio(const std::string& xxxPath, const std::string& folderPath)
                                 if (newSize > actualDataSize) {
                                     std::cout << "Warning: " << matchingFile << " too large (" << newSize << " > " << actualDataSize << "). Skipping." << std::endl;
                                 } else {
+                                    if (newSize < actualDataSize / 1.5) {
+                                        std::cout << "  Warning: New data is much smaller than original. Suggest using 'patchfromfsb'." << std::endl;
+                                    }
                                     std::fstream xxxFile(xxxPath, std::ios::binary | std::ios::in | std::ios::out);
                                     xxxFile.seekp(dataOffsetBase + currentDataOffset);
                                     
@@ -491,6 +502,100 @@ void PatchAllXXXAudio(const std::string& xxxPath, const std::string& folderPath)
         }
     }
     std::cout << "Finished. Total samples patched: " << patchCount << std::endl;
+}
+
+void PatchXXXFromSourceFSB(const std::string& xxxPath, const std::string& sourceFsbPath) {
+    auto sourceSamples = ParseFSB(sourceFsbPath);
+    if (sourceSamples.empty()) return;
+
+    std::ifstream f(xxxPath, std::ios::binary);
+    if (!f.is_open()) {
+        std::cout << "Failed to open " << xxxPath << std::endl;
+        return;
+    }
+
+    int fsbCount = 0;
+    while (true) {
+        char c;
+        if (!f.get(c)) break;
+        if (c == 'F') {
+            char sig[3];
+            if (f.read(sig, 3)) {
+                if (sig[0] == 'S' && sig[1] == 'B' && sig[2] == '4') {
+                    size_t startPos = (size_t)f.tellg() - 4;
+                    std::cout << "Patching internal FSB [Index " << fsbCount << "] from source..." << std::endl;
+
+                    // We need a temporary file for the internal FSB to use PatchFSBFromSource
+                    // but it's better to just do it in-place here to avoid copies.
+
+                    auto targetSamples = ParseFSB(xxxPath, (uint32_t)startPos);
+                    // ParseFSB handles the seeks internally if we give it the XXX path.
+                    // Wait, ParseFSB currently opens the file. If I give it the XXX path,
+                    // it starts from the beginning of the file.
+                    // I need a version of ParseFSB that starts at an offset.
+
+                    // Actually, I'll just reuse the logic from PatchFSBFromSource but adapted for XXX offset.
+
+                    std::fstream xxxF(xxxPath, std::ios::binary | std::ios::in | std::ios::out);
+                    std::ifstream srcF(sourceFsbPath, std::ios::binary);
+
+                    for (auto& t : targetSamples) {
+                        for (auto& s : sourceSamples) {
+                            if (t.name == s.name) {
+                                // Patch Metadata (using startPos + relative offsets)
+                                xxxF.seekp(startPos + t.headerOffset + 32);
+                                uint32_t nsBE = LE32(s.numSamples);
+                                xxxF.write((char*)&nsBE, 4);
+
+                                xxxF.seekp(startPos + t.headerOffset + 40);
+                                uint32_t usBE = LE32(s.uncompressedSize);
+                                uint32_t lsBE = LE32(s.loopStart);
+                                uint32_t leBE = LE32(s.loopEnd);
+                                uint32_t moBE = LE32(s.mode);
+                                uint32_t frBE = (uint32_t)LE32((uint32_t)s.frequency);
+
+                                xxxF.write((char*)&usBE, 4);
+                                xxxF.write((char*)&lsBE, 4);
+                                xxxF.write((char*)&leBE, 4);
+                                xxxF.write((char*)&moBE, 4);
+                                xxxF.write((char*)&frBE, 4);
+
+                                xxxF.seekp(startPos + t.headerOffset + 66);
+                                uint16_t chBE = LE16(s.channels);
+                                xxxF.write((char*)&chBE, 2);
+
+                                // Patch Data
+                                uint32_t toCopy = (s.size > t.size) ? t.size : s.size;
+                                xxxF.seekp(startPos + t.offset);
+                                srcF.seekg(s.offset);
+                                std::vector<char> buf(toCopy);
+                                srcF.read(buf.data(), toCopy);
+                                xxxF.write(buf.data(), toCopy);
+
+                                if (toCopy < t.size) {
+                                    std::vector<char> padding(t.size - toCopy, 0);
+                                    xxxF.write(padding.data(), padding.size());
+                                }
+                                std::cout << "  Auto-patched " << t.name << " from source FSB." << std::endl;
+                                break;
+                            }
+                        }
+                    }
+
+                    fsbCount++;
+
+                    // Skip this FSB in the outer scan
+                    FSB4_HEADER fsbHeader;
+                    f.seekg(startPos);
+                    f.read((char*)&fsbHeader, sizeof(fsbHeader));
+                    uint32_t size = sizeof(FSB4_HEADER) + LE32(fsbHeader.shdr_size) + LE32(fsbHeader.data_size);
+                    f.seekg(startPos + size);
+                } else {
+                    f.seekg((size_t)f.tellg() - 3);
+                }
+            }
+        }
+    }
 }
 
 /**
