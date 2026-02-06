@@ -57,7 +57,7 @@ void ExtractXXX(const std::string& path) {
         if (c == 'F') {
             char sig[3];
             if (f.read(sig, 3)) {
-                if (sig[0] == 'S' && sig[1] == 'B' && (sig[2] == '4' || sig[2] == '5')) {
+                if (sig[0] == 'S' && sig[1] == 'B') {
                     size_t startPos = (size_t)f.tellg() - 4;
                     std::cout << "Found FSB" << sig[2] << " [Index " << fsbCount << "] at 0x" << std::hex << startPos << std::dec << std::endl;
 
@@ -72,11 +72,15 @@ void ExtractXXX(const std::string& path) {
                         shdrSize = LE32(fsbHeader.shdr_size);
                         dataSize = LE32(fsbHeader.data_size);
                         totalFSBSize = sizeof(FSB4_HEADER) + shdrSize + dataSize;
-                    } else {
+                    } else if (sig[2] == '5') {
                         // FSB5 - just a placeholder chunk
                         totalFSBSize = 1024 * 1024; // 1MB safe chunk
+                    } else {
+                        // Generic FSB or other version - use a reasonable chunk if unknown
+                        totalFSBSize = 1024;
                     }
 
+                    f.clear();
                     f.seekg(0, std::ios::end);
                     size_t fileSize = (size_t)f.tellg();
                     f.seekg(startPos);
@@ -109,7 +113,8 @@ void ExtractXXX(const std::string& path) {
                     // Sample extraction
                     std::string samplesDir = outDir + "/audio_" + std::to_string(fsbCount) + "_samples";
                     CreateDirectoryIfNotExists(samplesDir);
-                    auto samples = ParseFSB(fsbOutPath, (uint32_t)startPos);
+                    // Use path and startPos to read from original file
+                    auto samples = ParseFSB(path, (uint32_t)startPos);
                     if (!samples.empty()) {
                         std::ifstream fsbIn(fsbOutPath, std::ios::binary);
                         int sIdx = 0;
@@ -128,6 +133,7 @@ void ExtractXXX(const std::string& path) {
                     }
 
                     fsbCount++;
+                    f.clear();
                     f.seekg(startPos + 4); // Continue after 'FSB'
                 } else {
                     f.seekg((size_t)f.tellg() - 3);
@@ -178,7 +184,7 @@ void PatchXXXAudio(const std::string& xxxPath, const std::string& sampleName, co
         if (c == 'F') {
             char sig[3];
             if (f.read(sig, 3)) {
-                if (sig[0] == 'S' && sig[1] == 'B' && sig[2] == '4') {
+                if (sig[0] == 'S' && sig[1] == 'B') {
                     size_t startPos = (size_t)f.tellg() - 4;
                     
                     FSB4_HEADER fsbHeader;
@@ -264,6 +270,7 @@ void PatchXXXAudio(const std::string& xxxPath, const std::string& sampleName, co
                         currentDataOffset += Align(actualSampleDataSize, 32);
                         currentSampleHeaderOffset += sampleHeaderSize;
                     }
+                    f.clear();
                 } else {
                     f.seekg((size_t)f.tellg() - 3);
                 }
@@ -292,7 +299,7 @@ void PatchXXXAudioByIndex(const std::string& xxxPath, int targetFsbIndex, int ta
         if (c == 'F') {
             char sig[3];
             if (f.read(sig, 3)) {
-                if (sig[0] == 'S' && sig[1] == 'B' && sig[2] == '4') {
+                if (sig[0] == 'S' && sig[1] == 'B') {
                     size_t startPos = (size_t)f.tellg() - 4;
                     if (fsbCount == targetFsbIndex) {
                         FSB4_HEADER fsbHeader;
@@ -375,11 +382,13 @@ void PatchXXXAudioByIndex(const std::string& xxxPath, int targetFsbIndex, int ta
                     }
                     
                     // Skip this FSB
+                    f.clear();
                     FSB4_HEADER fsbHeader;
                     f.seekg(startPos);
                     f.read((char*)&fsbHeader, sizeof(fsbHeader));
                     uint32_t size = sizeof(FSB4_HEADER) + LE32(fsbHeader.shdr_size) + LE32(fsbHeader.data_size);
                     f.seekg(startPos + size);
+                    f.clear();
                     fsbCount++;
                 } else {
                     f.seekg((size_t)f.tellg() - 3);
@@ -414,7 +423,7 @@ void PatchAllXXXAudio(const std::string& xxxPath, const std::string& folderPath)
         if (c == 'F') {
             char sig[3];
             if (f.read(sig, 3)) {
-                if (sig[0] == 'S' && sig[1] == 'B' && sig[2] == '4') {
+                if (sig[0] == 'S' && sig[1] == 'B') {
                     size_t startPos = (size_t)f.tellg() - 4;
                     
                     FSB4_HEADER fsbHeader;
@@ -495,6 +504,7 @@ void PatchAllXXXAudio(const std::string& xxxPath, const std::string& folderPath)
                         currentDataOffset += Align(actualDataSize, 32);
                         currentSampleHeaderOffset += sampleHeaderSize;
                     }
+                    f.clear();
                 } else {
                     f.seekg((size_t)f.tellg() - 3);
                 }
@@ -521,7 +531,7 @@ void PatchXXXFromSourceFSB(const std::string& xxxPath, const std::string& source
         if (c == 'F') {
             char sig[3];
             if (f.read(sig, 3)) {
-                if (sig[0] == 'S' && sig[1] == 'B' && sig[2] == '4') {
+                if (sig[0] == 'S' && sig[1] == 'B') {
                     size_t startPos = (size_t)f.tellg() - 4;
                     std::cout << "Patching internal FSB [Index " << fsbCount << "] from source..." << std::endl;
 
@@ -585,11 +595,13 @@ void PatchXXXFromSourceFSB(const std::string& xxxPath, const std::string& source
                     fsbCount++;
                     
                     // Skip this FSB in the outer scan
+                    f.clear();
                     FSB4_HEADER fsbHeader;
                     f.seekg(startPos);
                     f.read((char*)&fsbHeader, sizeof(fsbHeader));
                     uint32_t size = sizeof(FSB4_HEADER) + LE32(fsbHeader.shdr_size) + LE32(fsbHeader.data_size);
                     f.seekg(startPos + size);
+                    f.clear();
                 } else {
                     f.seekg((size_t)f.tellg() - 3);
                 }
@@ -619,7 +631,7 @@ void ReplaceXXXFSB(const std::string& xxxPath, int targetIndex, const std::strin
         if (c == 'F') {
             char sig[3];
             if (f.read(sig, 3)) {
-                if (sig[0] == 'S' && sig[1] == 'B' && (sig[2] == '4' || sig[2] == '5')) {
+                if (sig[0] == 'S' && sig[1] == 'B') {
                     size_t startPos = (size_t)f.tellg() - 4;
 
                     if (fsbCount == targetIndex) {
@@ -712,6 +724,7 @@ void ReplaceXXXFSB(const std::string& xxxPath, int targetIndex, const std::strin
                     }
 
                     // Not the index we want, skip it
+                    f.clear();
                     if (sig[2] == '4') {
                         FSB4_HEADER fsbHeader;
                         f.seekg(startPos);
@@ -721,6 +734,7 @@ void ReplaceXXXFSB(const std::string& xxxPath, int targetIndex, const std::strin
                     } else {
                          f.seekg(startPos + 4);
                     }
+                    f.clear();
                     fsbCount++;
                 } else {
                     f.seekg((size_t)f.tellg() - 3);
