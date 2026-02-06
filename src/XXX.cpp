@@ -109,18 +109,21 @@ void ExtractXXX(const std::string& path) {
                     // Sample extraction
                     std::string samplesDir = outDir + "/audio_" + std::to_string(fsbCount) + "_samples";
                     CreateDirectoryIfNotExists(samplesDir);
-                    auto samples = ParseFSB(fsbOutPath);
+                    auto samples = ParseFSB(fsbOutPath, (uint32_t)startPos);
                     if (!samples.empty()) {
                         std::ifstream fsbIn(fsbOutPath, std::ios::binary);
+                        int sIdx = 0;
                         for (auto& s : samples) {
                             if (s.offset + s.size <= totalFSBSize) {
-                                std::ofstream sf(samplesDir + "/" + s.name + ".bin", std::ios::binary);
+                                std::string sName = std::to_string(sIdx) + "_" + s.name + ".bin";
+                                std::ofstream sf(samplesDir + "/" + sName, std::ios::binary);
                                 fsbIn.seekg(s.offset);
                                 std::vector<char> sbuf(s.size);
                                 fsbIn.read(sbuf.data(), s.size);
                                 sf.write(sbuf.data(), s.size);
                                 sf.close();
                             }
+                            sIdx++;
                         }
                     }
 
@@ -270,6 +273,119 @@ void PatchXXXAudio(const std::string& xxxPath, const std::string& sampleName, co
     }
 }
 
+void PatchXXXAudioByIndex(const std::string& xxxPath, int targetFsbIndex, int targetSampleIndex, const std::string& newAudioPath) {
+    std::ifstream f(xxxPath, std::ios::binary);
+    if (!f.is_open()) {
+        std::cout << "Failed to open " << xxxPath << std::endl;
+        return;
+    }
+
+    int fsbCount = 0;
+    bool found = false;
+    while (true) {
+        char c;
+        if (!f.get(c)) break;
+        if (c == 'F') {
+            char sig[3];
+            if (f.read(sig, 3)) {
+                if (sig[0] == 'S' && sig[1] == 'B' && sig[2] == '4') {
+                    size_t startPos = (size_t)f.tellg() - 4;
+                    if (fsbCount == targetFsbIndex) {
+                        FSB4_HEADER fsbHeader;
+                        f.seekg(startPos);
+                        f.read((char*)&fsbHeader, sizeof(fsbHeader));
+
+                        uint32_t numSamples = LE32(fsbHeader.numsamples);
+                        uint32_t shdrSize = LE32(fsbHeader.shdr_size);
+
+                        if (targetSampleIndex < 0 || targetSampleIndex >= (int)numSamples) {
+                            std::cout << "Invalid sample index " << targetSampleIndex << " for FSB index " << targetFsbIndex << " (Total samples: " << numSamples << ")" << std::endl;
+                            return;
+                        }
+
+                        uint32_t currentSampleHeaderOffset = (uint32_t)startPos + sizeof(FSB4_HEADER);
+                        uint32_t dataOffsetBase = (uint32_t)startPos + sizeof(FSB4_HEADER) + shdrSize;
+                        uint32_t currentDataOffset = 0;
+
+                        for (uint32_t j = 0; j < numSamples; ++j) {
+                            f.seekg(currentSampleHeaderOffset);
+                            uint16_t sampleHeaderSize;
+                            f.read((char*)&sampleHeaderSize, 2);
+                            sampleHeaderSize = LE16(sampleHeaderSize);
+
+                            char name[31];
+                            memset(name, 0, 31);
+                            f.read(name, 30);
+
+                            f.seekg(currentSampleHeaderOffset + 2 + 30 + 4);
+                            uint32_t compressedSize;
+                            f.read((char*)&compressedSize, 4);
+                            compressedSize = LE32(compressedSize);
+
+                            uint32_t uncompressedSize;
+                            f.read((char*)&uncompressedSize, 4);
+                            uncompressedSize = LE32(uncompressedSize);
+
+                            uint32_t actualDataSize = (compressedSize > uncompressedSize) ? compressedSize : uncompressedSize;
+
+                            if ((int)j == targetSampleIndex) {
+                                std::ifstream newData(newAudioPath, std::ios::binary);
+                                if (!newData.is_open()) {
+                                    std::cout << "Failed to open new audio data" << std::endl;
+                                    return;
+                                }
+                                newData.seekg(0, std::ios::end);
+                                uint32_t newSize = (uint32_t)newData.tellg();
+                                newData.seekg(0, std::ios::beg);
+
+                                if (newSize > actualDataSize) {
+                                    std::cout << "New audio too large for " << name << " (" << newSize << " > " << actualDataSize << ")" << std::endl;
+                                    return;
+                                }
+
+                                std::fstream xxxFile(xxxPath, std::ios::binary | std::ios::in | std::ios::out);
+                                xxxFile.seekp(dataOffsetBase + currentDataOffset);
+
+                                char patchBuf[4096];
+                                while (newData.read(patchBuf, sizeof(patchBuf))) xxxFile.write(patchBuf, sizeof(patchBuf));
+                                xxxFile.write(patchBuf, newData.gcount());
+
+                                if (newSize < actualDataSize) {
+                                    std::vector<char> padding(actualDataSize - newSize, 0);
+                                    xxxFile.write(padding.data(), padding.size());
+                                }
+
+                                std::cout << "Patched sample index " << j << " (" << name << ") in FSB " << targetFsbIndex << " at 0x" << std::hex << (dataOffsetBase + currentDataOffset) << std::dec << std::endl;
+                                found = true;
+                                break;
+                            }
+
+                            currentDataOffset += Align(actualDataSize, 32);
+                            currentSampleHeaderOffset += sampleHeaderSize;
+                        }
+                        if (found) break;
+                    }
+
+                    // Skip this FSB
+                    FSB4_HEADER fsbHeader;
+                    f.seekg(startPos);
+                    f.read((char*)&fsbHeader, sizeof(fsbHeader));
+                    uint32_t size = sizeof(FSB4_HEADER) + LE32(fsbHeader.shdr_size) + LE32(fsbHeader.data_size);
+                    f.seekg(startPos + size);
+                    fsbCount++;
+                } else {
+                    f.seekg((size_t)f.tellg() - 3);
+                }
+            }
+        }
+        if (found) break;
+    }
+
+    if (!found) {
+        std::cout << "FSB index " << targetFsbIndex << " not found in " << xxxPath << std::endl;
+    }
+}
+
 void PatchAllXXXAudio(const std::string& xxxPath, const std::string& folderPath) {
     std::vector<std::string> files = GetFilesInDirectory(folderPath);
     if (files.empty()) {
@@ -329,7 +445,9 @@ void PatchAllXXXAudio(const std::string& xxxPath, const std::string& folderPath)
                         // Check if we have a matching file
                         std::string matchingFile = "";
                         for (const auto& file : files) {
-                            if (file == sampleName || file == (sampleName + ".bin")) {
+                            if (file == sampleName || file == (sampleName + ".bin") ||
+                                file == (std::to_string(j) + ".bin") ||
+                                file.find(std::to_string(j) + "_") == 0) {
                                 matchingFile = folderPath + "/" + file;
                                 break;
                             }

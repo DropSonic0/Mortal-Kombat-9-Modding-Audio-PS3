@@ -12,6 +12,8 @@ void PrintUsage() {
     std::cout << "  Patch All:  MK9Tool patchall <xxx_file> <folder_with_bins>" << std::endl;
     std::cout << "  Patching:   MK9Tool patch <xxx_file> <sample_name> <new_audio_bin>" << std::endl;
     std::cout << "  Patch FSB:  MK9Tool patchfsb <fsb_file> <sample_name> <new_audio_bin>" << std::endl;
+    std::cout << "  Patch FSBIdx:MK9Tool patchfsbidx <fsb_file> <sample_idx> <new_audio_bin>" << std::endl;
+    std::cout << "  Patch XXXIdx:MK9Tool patchidx <xxx_file> <fsb_idx> <sample_idx> <new_audio_bin>" << std::endl;
     std::cout << "  Extr. FSB:  MK9Tool extractfsb <fsb_file> [--swap]" << std::endl;
 }
 
@@ -65,6 +67,31 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         PatchFSBSample(argv[2], argv[3], argv[4]);
+    } else if (arg1 == "patchfsbidx") {
+        if (argc < 5) {
+            PrintUsage();
+            return 1;
+        }
+        try {
+            int sIdx = std::stoi(argv[3]);
+            PatchFSBSampleByIndex(argv[2], sIdx, argv[4]);
+        } catch (...) {
+            std::cout << "Invalid sample index format." << std::endl;
+            return 1;
+        }
+    } else if (arg1 == "patchidx") {
+        if (argc < 6) {
+            PrintUsage();
+            return 1;
+        }
+        try {
+            int fIdx = std::stoi(argv[3]);
+            int sIdx = std::stoi(argv[4]);
+            PatchXXXAudioByIndex(argv[2], fIdx, sIdx, argv[5]);
+        } catch (...) {
+            std::cout << "Invalid index format." << std::endl;
+            return 1;
+        }
     } else if (arg1 == "extractfsb") {
         if (argc < 3) {
             PrintUsage();

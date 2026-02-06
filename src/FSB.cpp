@@ -2,7 +2,7 @@
 #include <cstring>
 #include <algorithm>
 
-std::vector<FSBSample> ParseFSB(const std::string& fsbPath) {
+std::vector<FSBSample> ParseFSB(const std::string& fsbPath, uint32_t baseOffset) {
     std::vector<FSBSample> samples;
     std::ifstream f(fsbPath, std::ios::binary);
     if (!f.is_open()) return samples;
@@ -63,6 +63,9 @@ std::vector<FSBSample> ParseFSB(const std::string& fsbPath) {
         s.headerSize = sampleHeaderSize;
         samples.push_back(s);
 
+        std::cout << "  [Sample " << i << "] " << s.name << " | Offset: 0x" << std::hex << (baseOffset + s.offset)
+                  << " | Size: " << std::dec << s.size << " bytes | End: 0x" << std::hex << (baseOffset + s.offset + s.size) << std::dec << std::endl;
+
         currentDataOffset += Align(actualDataSize, 32);
         currentSampleHeaderOffset += sampleHeaderSize;
     }
@@ -81,8 +84,10 @@ void ExtractFSB(const std::string& fsbPath, bool swapEndian) {
     CreateDirectoryIfNotExists(outDir);
 
     std::ifstream f(fsbPath, std::ios::binary);
+    int sIdx = 0;
     for (auto& s : samples) {
-        std::ofstream sf(outDir + "/" + s.name + ".bin", std::ios::binary);
+        std::string sName = std::to_string(sIdx) + "_" + s.name + ".bin";
+        std::ofstream sf(outDir + "/" + sName, std::ios::binary);
         f.seekg(s.offset);
         std::vector<char> buf(s.size);
         f.read(buf.data(), s.size);
@@ -97,6 +102,7 @@ void ExtractFSB(const std::string& fsbPath, bool swapEndian) {
 
         sf.write(buf.data(), s.size);
         sf.close();
+        sIdx++;
     }
     std::cout << "Extracted " << samples.size() << " samples to " << outDir << (swapEndian ? " (with Endian Swap)" : "") << std::endl;
 }
@@ -146,5 +152,49 @@ bool PatchFSBSample(const std::string& fsbPath, const std::string& sampleName, c
     // For now, we keep the original size in header to avoid shifting data.
 
     std::cout << "Successfully patched sample " << sampleName << " in " << fsbPath << std::endl;
+    return true;
+}
+
+bool PatchFSBSampleByIndex(const std::string& fsbPath, int sampleIndex, const std::string& newSampleDataPath) {
+    std::vector<FSBSample> samples = ParseFSB(fsbPath);
+    if (sampleIndex < 0 || sampleIndex >= (int)samples.size()) {
+        std::cout << "Invalid sample index: " << sampleIndex << " (Total samples: " << samples.size() << ")" << std::endl;
+        return false;
+    }
+
+    FSBSample& s = samples[sampleIndex];
+
+    std::ifstream newData(newSampleDataPath, std::ios::binary);
+    if (!newData.is_open()) {
+        std::cout << "Failed to open new audio data: " << newSampleDataPath << std::endl;
+        return false;
+    }
+
+    newData.seekg(0, std::ios::end);
+    uint32_t newSize = (uint32_t)newData.tellg();
+    newData.seekg(0, std::ios::beg);
+
+    if (newSize > s.size) {
+        std::cout << "Error: New sample data is larger than original (" << newSize << " > " << s.size << "). In-place patching failed." << std::endl;
+        return false;
+    }
+
+    std::fstream fsbFile(fsbPath, std::ios::binary | std::ios::in | std::ios::out);
+    if (!fsbFile.is_open()) {
+        std::cout << "Failed to open " << fsbPath << " for writing." << std::endl;
+        return false;
+    }
+    fsbFile.seekp(s.offset);
+
+    std::vector<char> buffer(newSize);
+    newData.read(buffer.data(), newSize);
+    fsbFile.write(buffer.data(), newSize);
+
+    if (newSize < s.size) {
+        std::vector<char> padding(s.size - newSize, 0);
+        fsbFile.write(padding.data(), padding.size());
+    }
+
+    std::cout << "Successfully patched sample index " << sampleIndex << " (" << s.name << ") in " << fsbPath << std::endl;
     return true;
 }

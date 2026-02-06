@@ -24,8 +24,9 @@ struct FSBSample {
     uint32_t headerSize;
 };
 
-std::vector<FSBSample> ParseFSB(const std::string& fsbPath);
+std::vector<FSBSample> ParseFSB(const std::string& fsbPath, uint32_t baseOffset = 0);
 void ExtractFSB(const std::string& fsbPath, bool swapEndian = false);
 bool PatchFSBSample(const std::string& fsbPath, const std::string& sampleName, const std::string& newSampleDataPath);
+bool PatchFSBSampleByIndex(const std::string& fsbPath, int sampleIndex, const std::string& newSampleDataPath);
 
 #endif
