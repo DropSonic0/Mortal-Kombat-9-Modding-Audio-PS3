@@ -9,9 +9,10 @@ void PrintUsage() {
     std::cout << "  Packing:    MK9Tool <header.bin> <data.bin> <out.xxx>" << std::endl;
     std::cout << "  Injection:  MK9Tool inject <target_file> <new_asset> <offset_hex>" << std::endl;
     std::cout << "  Replace FSB:MK9Tool replacefsb <xxx_file> <fsb_index> <new_fsb>" << std::endl;
+    std::cout << "  Patch All:  MK9Tool patchall <xxx_file> <folder_with_bins>" << std::endl;
     std::cout << "  Patching:   MK9Tool patch <xxx_file> <sample_name> <new_audio_bin>" << std::endl;
     std::cout << "  Patch FSB:  MK9Tool patchfsb <fsb_file> <sample_name> <new_audio_bin>" << std::endl;
-    std::cout << "  Extr. FSB:  MK9Tool extractfsb <fsb_file>" << std::endl;
+    std::cout << "  Extr. FSB:  MK9Tool extractfsb <fsb_file> [--swap]" << std::endl;
 }
 
 int main(int argc, char* argv[]) {
@@ -40,6 +41,12 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         PatchXXXAudio(argv[2], argv[3], argv[4]);
+    } else if (arg1 == "patchall" || arg1 == "all") {
+        if (argc < 4) {
+            PrintUsage();
+            return 1;
+        }
+        PatchAllXXXAudio(argv[2], argv[3]);
     } else if (arg1 == "replacefsb") {
         if (argc < 5) {
             PrintUsage();
@@ -49,7 +56,7 @@ int main(int argc, char* argv[]) {
             int index = std::stoi(argv[3]);
             ReplaceXXXFSB(argv[2], index, argv[4]);
         } catch (...) {
-            std::cout << "Invalid index format." << std::endl;
+            std::cout << "Invalid index format. The index must be a number (e.g. 0, 1, 2...)" << std::endl;
             return 1;
         }
     } else if (arg1 == "patchfsb") {
@@ -63,7 +70,8 @@ int main(int argc, char* argv[]) {
             PrintUsage();
             return 1;
         }
-        ExtractFSB(argv[2]);
+        bool swap = (argc > 3 && std::string(argv[3]) == "--swap");
+        ExtractFSB(argv[2], swap);
     } else if (argc == 2) {
         std::string ext = argv[1];
         if (ext.find(".fsb") != std::string::npos || ext.find(".FSB") != std::string::npos) {

@@ -21,9 +21,8 @@ std::vector<FSBSample> ParseFSB(const std::string& fsbPath) {
     uint32_t shdrSize = LE32(header.shdr_size);
     uint32_t dataSize = LE32(header.data_size);
 
-    uint32_t headerSize = DetectFSB4HeaderSize(f, 0, shdrSize);
-    uint32_t currentSampleHeaderOffset = headerSize;
-    uint32_t dataOffsetBase = headerSize + shdrSize;
+    uint32_t currentSampleHeaderOffset = sizeof(FSB4_HEADER);
+    uint32_t dataOffsetBase = sizeof(FSB4_HEADER) + shdrSize;
     uint32_t currentDataOffset = 0;
 
     for (uint32_t i = 0; i < numSamples; ++i) {
@@ -41,28 +40,37 @@ std::vector<FSBSample> ParseFSB(const std::string& fsbPath) {
         // In some FSB4, it's in the sample header.
         
         // Skip some fields to get to compressed size
-        // FSB4_SAMPLE_HEADER: size(2), name(30), numsamples(4), compressedsize(4)...
+        // FSB4_SAMPLE_HEADER: size(2), name(30), numsamples(4), compressedsize(4), uncompressedsize(4)...
         f.seekg(currentSampleHeaderOffset + 2 + 30 + 4);
         uint32_t compressedSize;
         f.read((char*)&compressedSize, 4);
         compressedSize = LE32(compressedSize);
 
+        uint32_t uncompressedSize;
+        f.read((char*)&uncompressedSize, 4);
+        uncompressedSize = LE32(uncompressedSize);
+
+        // Heuristic: Use the larger of compressed and uncompressed size for data offset calculation.
+        // In some MK9 PS3 FSBs, one field is used for disk size and the other for metadata, 
+        // but both occupy space in the data block.
+        uint32_t actualDataSize = (compressedSize > uncompressedSize) ? compressedSize : uncompressedSize;
+
         FSBSample s;
         s.name = name;
         s.offset = dataOffsetBase + currentDataOffset;
-        s.size = compressedSize;
+        s.size = actualDataSize;
         s.headerOffset = currentSampleHeaderOffset;
         s.headerSize = sampleHeaderSize;
         samples.push_back(s);
 
-        currentDataOffset += compressedSize;
+        currentDataOffset += Align(actualDataSize, 32);
         currentSampleHeaderOffset += sampleHeaderSize;
     }
 
     return samples;
 }
 
-void ExtractFSB(const std::string& fsbPath) {
+void ExtractFSB(const std::string& fsbPath, bool swapEndian) {
     auto samples = ParseFSB(fsbPath);
     if (samples.empty()) {
         std::cout << "No samples found or invalid FSB: " << fsbPath << std::endl;
@@ -78,27 +86,19 @@ void ExtractFSB(const std::string& fsbPath) {
         f.seekg(s.offset);
         std::vector<char> buf(s.size);
         f.read(buf.data(), s.size);
+        
+        if (swapEndian) {
+            for (size_t i = 0; i < buf.size() - 1; i += 2) {
+                char tmp = buf[i];
+                buf[i] = buf[i + 1];
+                buf[i + 1] = tmp;
+            }
+        }
+
         sf.write(buf.data(), s.size);
         sf.close();
     }
-    std::cout << "Extracted " << samples.size() << " samples to " << outDir << std::endl;
-}
-
-uint32_t DetectFSB4HeaderSize(std::istream& f, size_t startPos, uint32_t shdrSize) {
-    auto currentPos = f.tellg();
-    f.seekg(startPos + 24);
-    uint16_t testSize;
-    if (!f.read((char*)&testSize, 2)) {
-        f.clear();
-        f.seekg(currentPos);
-        return 48;
-    }
-    testSize = LE16(testSize);
-    f.seekg(currentPos);
-    // If the size at offset 24 looks like a valid sample header size (32-512 bytes)
-    // and is less than or equal to total shdrSize, it's likely a 24-byte main header.
-    if (testSize >= 32 && testSize <= 512 && testSize <= shdrSize) return 24;
-    return 48;
+    std::cout << "Extracted " << samples.size() << " samples to " << outDir << (swapEndian ? " (with Endian Swap)" : "") << std::endl;
 }
 
 bool PatchFSBSample(const std::string& fsbPath, const std::string& sampleName, const std::string& newSampleDataPath) {
@@ -120,10 +120,7 @@ bool PatchFSBSample(const std::string& fsbPath, const std::string& sampleName, c
     newData.seekg(0, std::ios::beg);
 
     if (newSize > it->size) {
-        std::cout << "ERROR: New audio is TOO LARGE for this slot!" << std::endl;
-        std::cout << "  Original size: " << it->size << " bytes" << std::endl;
-        std::cout << "  Your file:     " << newSize << " bytes" << std::endl;
-        std::cout << "  Please re-encode with lower quality to fit the original size." << std::endl;
+        std::cout << "Error: New sample data is larger than original (" << newSize << " > " << it->size << "). In-place patching failed." << std::endl;
         return false;
     }
 

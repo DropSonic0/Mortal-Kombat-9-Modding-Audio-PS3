@@ -46,5 +46,11 @@ inline uint32_t BE32(uint32_t v) {
 bool FileExists(const std::string& name);
 std::string GetFileNameWithoutExtension(const std::string& path);
 void CreateDirectoryIfNotExists(const std::string& path);
+std::vector<std::string> GetFilesInDirectory(const std::string& path);
+
+inline uint32_t Align(uint32_t val, uint32_t alignment) {
+    if (alignment == 0) return val;
+    return (val + alignment - 1) & ~(alignment - 1);
+}
 
 #endif

@@ -1,4 +1,9 @@
 #include "Utils.h"
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <dirent.h>
+#endif
 
 uint32_t SwapEndian(uint32_t val) {
     return ((val >> 24) & 0xff) |
@@ -30,4 +35,33 @@ std::string GetFileNameWithoutExtension(const std::string& path) {
 
 void CreateDirectoryIfNotExists(const std::string& path) {
     MKDIR(path.c_str());
+}
+
+std::vector<std::string> GetFilesInDirectory(const std::string& path) {
+    std::vector<std::string> files;
+#ifdef _WIN32
+    std::string searchPath = path + "/*.*";
+    WIN32_FIND_DATAA fd;
+    HANDLE hFind = FindFirstFileA(searchPath.c_str(), &fd);
+    if (hFind != INVALID_HANDLE_VALUE) {
+        do {
+            if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+                files.push_back(fd.cFileName);
+            }
+        } while (FindNextFileA(hFind, &fd));
+        FindClose(hFind);
+    }
+#else
+    DIR* dir = opendir(path.c_str());
+    if (dir) {
+        struct dirent* ent;
+        while ((ent = readdir(dir)) != NULL) {
+            if (ent->d_type == DT_REG) {
+                files.push_back(ent->d_name);
+            }
+        }
+        closedir(dir);
+    }
+#endif
+    return files;
 }

@@ -59,7 +59,7 @@ void ExtractXXX(const std::string& path) {
             if (f.read(sig, 3)) {
                 if (sig[0] == 'S' && sig[1] == 'B' && (sig[2] == '4' || sig[2] == '5')) {
                     size_t startPos = (size_t)f.tellg() - 4;
-                    std::cout << "Found " << sig[2] << " at 0x" << std::hex << startPos << std::dec << std::endl;
+                    std::cout << "Found FSB" << sig[2] << " [Index " << fsbCount << "] at 0x" << std::hex << startPos << std::dec << std::endl;
 
                     uint32_t shdrSize = 0;
                     uint32_t dataSize = 0;
@@ -205,6 +205,12 @@ void PatchXXXAudio(const std::string& xxxPath, const std::string& sampleName, co
                             f.read((char*)&compressedSize, 4);
                             compressedSize = LE32(compressedSize);
                             
+                            uint32_t uncompressedSize;
+                            f.read((char*)&uncompressedSize, 4);
+                            uncompressedSize = LE32(uncompressedSize);
+
+                            uint32_t actualDataSize = (compressedSize > uncompressedSize) ? compressedSize : uncompressedSize;
+
                             std::ifstream newData(newAudioPath, std::ios::binary);
                             if (!newData.is_open()) {
                                 std::cout << "Failed to open new audio data" << std::endl;
@@ -214,8 +220,8 @@ void PatchXXXAudio(const std::string& xxxPath, const std::string& sampleName, co
                             uint32_t newSize = (uint32_t)newData.tellg();
                             newData.seekg(0, std::ios::beg);
 
-                            if (newSize > compressedSize) {
-                                std::cout << "New audio too large for " << sampleName << " (" << newSize << " > " << compressedSize << ")" << std::endl;
+                            if (newSize > actualDataSize) {
+                                std::cout << "New audio too large for " << sampleName << " (" << newSize << " > " << actualDataSize << ")" << std::endl;
                                 return;
                             }
 
@@ -226,8 +232,8 @@ void PatchXXXAudio(const std::string& xxxPath, const std::string& sampleName, co
                             while (newData.read(patchBuf, sizeof(patchBuf))) xxxFile.write(patchBuf, sizeof(patchBuf));
                             xxxFile.write(patchBuf, newData.gcount());
                             
-                            if (newSize < compressedSize) {
-                                std::vector<char> padding(compressedSize - newSize, 0);
+                            if (newSize < actualDataSize) {
+                                std::vector<char> padding(actualDataSize - newSize, 0);
                                 xxxFile.write(padding.data(), padding.size());
                             }
                             
@@ -242,7 +248,13 @@ void PatchXXXAudio(const std::string& xxxPath, const std::string& sampleName, co
                         f.read((char*)&sampleCompressedSize, 4);
                         sampleCompressedSize = LE32(sampleCompressedSize);
                         
-                        currentDataOffset += sampleCompressedSize;
+                        uint32_t sampleUncompressedSize;
+                        f.read((char*)&sampleUncompressedSize, 4);
+                        sampleUncompressedSize = LE32(sampleUncompressedSize);
+
+                        uint32_t actualSampleDataSize = (sampleCompressedSize > sampleUncompressedSize) ? sampleCompressedSize : sampleUncompressedSize;
+
+                        currentDataOffset += Align(actualSampleDataSize, 32);
                         currentSampleHeaderOffset += sampleHeaderSize;
                     }
                 } else {
@@ -256,6 +268,111 @@ void PatchXXXAudio(const std::string& xxxPath, const std::string& sampleName, co
     if (!found) {
         std::cout << "Sample " << sampleName << " not found in " << xxxPath << std::endl;
     }
+}
+
+void PatchAllXXXAudio(const std::string& xxxPath, const std::string& folderPath) {
+    std::vector<std::string> files = GetFilesInDirectory(folderPath);
+    if (files.empty()) {
+        std::cout << "No files found in folder " << folderPath << std::endl;
+        return;
+    }
+
+    std::ifstream f(xxxPath, std::ios::binary);
+    if (!f.is_open()) {
+        std::cout << "Failed to open " << xxxPath << std::endl;
+        return;
+    }
+
+    int patchCount = 0;
+    while (true) {
+        char c;
+        if (!f.get(c)) break;
+        if (c == 'F') {
+            char sig[3];
+            if (f.read(sig, 3)) {
+                if (sig[0] == 'S' && sig[1] == 'B' && sig[2] == '4') {
+                    size_t startPos = (size_t)f.tellg() - 4;
+                    
+                    FSB4_HEADER fsbHeader;
+                    f.seekg(startPos);
+                    f.read((char*)&fsbHeader, sizeof(fsbHeader));
+                    
+                    uint32_t numSamples = LE32(fsbHeader.numsamples);
+                    uint32_t shdrSize = LE32(fsbHeader.shdr_size);
+                    
+                    uint32_t currentSampleHeaderOffset = (uint32_t)startPos + sizeof(FSB4_HEADER);
+                    uint32_t dataOffsetBase = (uint32_t)startPos + sizeof(FSB4_HEADER) + shdrSize;
+                    uint32_t currentDataOffset = 0;
+
+                    for (uint32_t j = 0; j < numSamples; ++j) {
+                        f.seekg(currentSampleHeaderOffset);
+                        uint16_t sampleHeaderSize;
+                        f.read((char*)&sampleHeaderSize, 2);
+                        sampleHeaderSize = LE16(sampleHeaderSize);
+                        
+                        char name[31];
+                        memset(name, 0, 31);
+                        f.read(name, 30);
+                        std::string sampleName(name);
+
+                        f.seekg(currentSampleHeaderOffset + 2 + 30 + 4);
+                        uint32_t compressedSize;
+                        f.read((char*)&compressedSize, 4);
+                        compressedSize = LE32(compressedSize);
+                        
+                        uint32_t uncompressedSize;
+                        f.read((char*)&uncompressedSize, 4);
+                        uncompressedSize = LE32(uncompressedSize);
+
+                        uint32_t actualDataSize = (compressedSize > uncompressedSize) ? compressedSize : uncompressedSize;
+
+                        // Check if we have a matching file
+                        std::string matchingFile = "";
+                        for (const auto& file : files) {
+                            if (file == sampleName || file == (sampleName + ".bin")) {
+                                matchingFile = folderPath + "/" + file;
+                                break;
+                            }
+                        }
+
+                        if (!matchingFile.empty()) {
+                            std::ifstream newData(matchingFile, std::ios::binary);
+                            if (newData.is_open()) {
+                                newData.seekg(0, std::ios::end);
+                                uint32_t newSize = (uint32_t)newData.tellg();
+                                newData.seekg(0, std::ios::beg);
+
+                                if (newSize > actualDataSize) {
+                                    std::cout << "Warning: " << matchingFile << " too large (" << newSize << " > " << actualDataSize << "). Skipping." << std::endl;
+                                } else {
+                                    std::fstream xxxFile(xxxPath, std::ios::binary | std::ios::in | std::ios::out);
+                                    xxxFile.seekp(dataOffsetBase + currentDataOffset);
+                                    
+                                    char patchBuf[4096];
+                                    while (newData.read(patchBuf, sizeof(patchBuf))) xxxFile.write(patchBuf, sizeof(patchBuf));
+                                    xxxFile.write(patchBuf, newData.gcount());
+                                    
+                                    if (newSize < actualDataSize) {
+                                        std::vector<char> padding(actualDataSize - newSize, 0);
+                                        xxxFile.write(padding.data(), padding.size());
+                                    }
+                                    
+                                    std::cout << "Auto-patched: " << sampleName << " [Offset: 0x" << std::hex << (dataOffsetBase + currentDataOffset) << std::dec << "]" << std::endl;
+                                    patchCount++;
+                                }
+                            }
+                        }
+                        
+                        currentDataOffset += Align(actualDataSize, 32);
+                        currentSampleHeaderOffset += sampleHeaderSize;
+                    }
+                } else {
+                    f.seekg((size_t)f.tellg() - 3);
+                }
+            }
+        }
+    }
+    std::cout << "Finished. Total samples patched: " << patchCount << std::endl;
 }
 
 /**
@@ -316,12 +433,54 @@ void ReplaceXXXFSB(const std::string& xxxPath, int targetIndex, const std::strin
                         }
 
                         std::fstream xxxF(xxxPath, std::ios::binary | std::ios::in | std::ios::out);
+                        if (!xxxF.is_open()) {
+                            std::cout << "Failed to open " << xxxPath << " for writing." << std::endl;
+                            return;
+                        }
                         xxxF.seekp(startPos);
-                        xxxF << newF.rdbuf();
+                        
+                        char copyBuf[8192];
+                        uint32_t remaining = newSize;
+                        while (remaining > 0) {
+                            uint32_t chunk = (remaining > sizeof(copyBuf)) ? sizeof(copyBuf) : remaining;
+                            newF.read(copyBuf, chunk);
+                            xxxF.write(copyBuf, newF.gcount());
+                            remaining -= (uint32_t)newF.gcount();
+                            if (newF.gcount() == 0) break;
+                        }
 
                         if (newSize < maxAllowedSize) {
                             std::vector<char> padding(maxAllowedSize - newSize, 0);
                             xxxF.write(padding.data(), padding.size());
+                        }
+
+                        // Update XXX header metadata (UE3 BulkData)
+                        uint32_t startPosBE = BE32((uint32_t)startPos);
+                        uint32_t oldSizeBE = BE32(totalFSBSize);
+                        uint32_t newSizeBE = BE32(newSize);
+
+                        xxxF.clear();
+                        xxxF.seekg(0);
+                        std::vector<char> headerData(startPos);
+                        xxxF.read(headerData.data(), startPos);
+
+                        for (size_t i = 8; i <= (size_t)startPos - 4; ++i) {
+                            uint32_t val;
+                            memcpy(&val, &headerData[i], 4);
+                            if (val == startPosBE) {
+                                // Potentially found the offset field. Check preceding size fields.
+                                uint32_t s1, s2;
+                                if (i >= 8) {
+                                    memcpy(&s1, &headerData[i - 4], 4);
+                                    memcpy(&s2, &headerData[i - 8], 4);
+                                    if (s1 == oldSizeBE && s2 == oldSizeBE) {
+                                        xxxF.seekp(i - 8);
+                                        xxxF.write((char*)&newSizeBE, 4);
+                                        xxxF.write((char*)&newSizeBE, 4);
+                                        std::cout << "Updated XXX header metadata at 0x" << std::hex << (i - 8) << std::dec << std::endl;
+                                    }
+                                }
+                            }
                         }
 
                         std::cout << "Successfully replaced FSB index " << targetIndex << " in " << xxxPath << " (Offset: 0x" << std::hex << startPos << std::dec << ")" << std::endl;

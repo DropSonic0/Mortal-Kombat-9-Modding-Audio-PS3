@@ -25,8 +25,7 @@ struct FSBSample {
 };
 
 std::vector<FSBSample> ParseFSB(const std::string& fsbPath);
-void ExtractFSB(const std::string& fsbPath);
+void ExtractFSB(const std::string& fsbPath, bool swapEndian = false);
 bool PatchFSBSample(const std::string& fsbPath, const std::string& sampleName, const std::string& newSampleDataPath);
-uint32_t DetectFSB4HeaderSize(std::istream& f, size_t startPos, uint32_t shdrSize);
 
 #endif
