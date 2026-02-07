@@ -1,41 +1,13 @@
 MK9Tool for PS3 - Quick Guide
 ============================
+EXTRACTION
+Run: MK9Tool.exe <file.xxx> OR drag the <file.xxx> to the MK9Tool.exe
 
-1. EXTRACTION
-Run: MK9Tool.exe <file.xxx> OR MK9Tool.exe <file.fsb>
-If extracting .XXX:
-- header.bin / data.bin (The raw UE3 package parts)
-- audio_X.fsb (Internal FMOD sound banks)
-- audio_X_samples/ (Folder with individual audio tracks names)
+Extr. FSB
+Run: MK9Tool.exe extractfsb <fsb_file> OR drag the <fsb_file> to the MK9Tool.exe
 
-If extracting .FSB:
-- Folder with individual .bin audio tracks.
+Patch All  
+Run: MK9Tool.exe patchall <xxx_file> <folder_with_bins> OR drag the <folder_with_bins> to the MK9Tool.exe and select you <file.xxx>
 
-2. HOW TO CREATE NEW AUDIO (FSB)
-To replace audio, you need to encode your WAVs into the FMOD format used by the game:
-a) Download "FMOD Designer" (Version 4.30 - 4.34 is recommended).
-b) Create a new project and add your WAV files.
-c) In the "Music" or "SoundBank" properties, set the compression format to "ADPCM" or "PCM16".
-d) Build the project. This will generate a .fsb file.
-
-3. REPLACING AUDIO
-Option A (Easy): Replace a single sound by its name.
-Run: MK9Tool.exe patch <file.xxx> <sample_name> <your_new_sample.bin>
-*The new sample must be the raw data from your new FSB or a compatible encoded file.
-
-Option B (Fast): Replace all sounds in a folder.
-Run: MK9Tool.exe patchall <file.xxx> <folder_with_bins>
-*This will look for all .bin files in the folder and patch them into the .XXX automatically.
-
-Option C (Advanced): Replace an entire sound bank by offset.
-Run: MK9Tool.exe inject <file.xxx> <your_new_bank.fsb> <offset_hex>
-*Use the offset shown by MK9Tool during extraction.
-
-Option D (New): Replace an entire sound bank by index.
-Run: MK9Tool.exe replacefsb <file.xxx> <fsb_index> <your_new_bank.fsb>
-*Example: MK9Tool.exe replacefsb char_jade.xxx 0 new_audio.fsb
-*The index starts at 0 for the first FSB found in the file.
-*NOTE: For best compatibility, your new FSB should match the original Sample Rate (usually 48000Hz).
-
-4. REBUILDING .XXX
-Run: MK9Tool.exe <header.bin> <data.bin> <new_file.xxx>
+Patching
+Run: MK9Tool.exe patch <xxx_file> <sample_name> <new_audio_bin> OR drag the <new_audio_bin> to the MK9Tool.exe and select you <xxx_file>
