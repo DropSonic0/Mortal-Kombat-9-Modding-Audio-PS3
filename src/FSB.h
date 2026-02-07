@@ -33,7 +33,7 @@ struct FSBSample {
     uint16_t channels;
 };
 
-std::vector<FSBSample> ParseFSB(const std::string& fsbPath, uint32_t baseOffset = 0);
+std::vector<FSBSample> ParseFSB(const std::string& fsbPath, uint32_t baseOffset = 0, uint32_t displayOffset = 0);
 void ExtractFSB(const std::string& fsbPath);
 
 #endif
