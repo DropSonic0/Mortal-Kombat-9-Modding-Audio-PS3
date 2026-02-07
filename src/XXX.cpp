@@ -109,13 +109,12 @@ void ExtractXXX(const std::string& path) {
                     // Sample extraction
                     std::string samplesDir = outDir + "/audio_" + std::to_string(fsbCount) + "_samples";
                     CreateDirectoryIfNotExists(samplesDir);
-                    auto samples = ParseFSB(fsbOutPath, (uint32_t)startPos);
+                    auto samples = ParseFSB(fsbOutPath, 0, (uint32_t)startPos);
                     if (!samples.empty()) {
                         std::ifstream fsbIn(fsbOutPath, std::ios::binary);
-                        int sIdx = 0;
                         for (auto& s : samples) {
                             if (s.offset + s.size <= totalFSBSize) {
-                                std::string sName = std::to_string(sIdx) + "_" + s.name + ".bin";
+                                std::string sName = s.name + ".bin";
                                 std::ofstream sf(samplesDir + "/" + sName, std::ios::binary);
                                 fsbIn.seekg(s.offset);
                                 std::vector<char> sbuf(s.size);
@@ -123,7 +122,6 @@ void ExtractXXX(const std::string& path) {
                                 sf.write(sbuf.data(), s.size);
                                 sf.close();
                             }
-                            sIdx++;
                         }
                     }
 
@@ -215,7 +213,8 @@ void PatchXXXAudio(const std::string& xxxPath, const std::string& sampleName, co
                                 xxxFile.write(padding.data(), padding.size());
                             }
                             
-                            std::cout << "Patched " << sampleName << " in " << xxxPath << " at 0x" << std::hex << (dataOffsetBase + currentDataOffset) << std::dec << std::endl;
+                            std::cout << "Patched " << sampleName << " in " << xxxPath << " at 0x" << std::hex << (dataOffsetBase + currentDataOffset) << std::dec 
+                                      << " (" << actualDataSize << " -> " << newSize << " bytes)" << std::endl;
                             found = true;
                             break;
                         }
@@ -340,7 +339,7 @@ void PatchAllXXXAudio(const std::string& xxxPath, const std::string& folderPath)
                                         xxxFile.write(padding.data(), padding.size());
                                     }
                                     
-                                    std::cout << "Auto-patched: " << sampleName << " [Offset: 0x" << std::hex << (dataOffsetBase + currentDataOffset) << std::dec << "]" << std::endl;
+                                    std::cout << "Auto-patched: " << sampleName << " [Offset: 0x" << std::hex << (dataOffsetBase + currentDataOffset) << std::dec << "] (" << actualDataSize << " -> " << newSize << " bytes)" << std::endl;
                                     patchCount++;
                                 }
                             }

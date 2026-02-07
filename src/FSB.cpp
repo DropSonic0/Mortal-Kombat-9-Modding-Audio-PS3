@@ -2,7 +2,26 @@
 #include <cstring>
 #include <algorithm>
 
-std::vector<FSBSample> ParseFSB(const std::string& fsbPath, uint32_t baseOffset) {
+std::string GetFormatString(uint32_t mode) {
+    if (mode & 0x00000008) return "PCM8";
+    if (mode & 0x00000010) return "PCM16";
+    if (mode & 0x00000020) return "PCM24";
+    if (mode & 0x00000040) return "PCM32";
+    if (mode & 0x00000080) return "PCMFLOAT";
+    if (mode & 0x00000100) return "GCADPCM";
+    if (mode & 0x00000200) return "IMAADPCM";
+    if (mode & 0x00000400) return "VAG";
+    if (mode & 0x00000800) return "HEVAG";
+    if (mode & 0x00001000) return "XMA";
+    if (mode & 0x00002000) return "MPEG";
+    if (mode & 0x00004000) return "CELT";
+    if (mode & 0x00008000) return "AT9";
+    if (mode & 0x00010000) return "XWMA";
+    if (mode & 0x00020000) return "VORBIS";
+    return "UNKNOWN";
+}
+
+std::vector<FSBSample> ParseFSB(const std::string& fsbPath, uint32_t baseOffset, uint32_t displayOffset) {
     std::vector<FSBSample> samples;
     std::ifstream f(fsbPath, std::ios::binary);
     if (!f.is_open()) return samples;
@@ -94,8 +113,12 @@ std::vector<FSBSample> ParseFSB(const std::string& fsbPath, uint32_t baseOffset)
         s.channels = channels;
         samples.push_back(s);
 
-        std::cout << "  [Sample " << i << "] " << s.name << " | Offset: 0x" << std::hex << (baseOffset + s.offset) 
-                  << " | Size: " << std::dec << s.size << " bytes | End: 0x" << std::hex << (baseOffset + s.offset + s.size) << std::dec << std::endl;
+        uint32_t finalDisplayOffset = (displayOffset > 0) ? displayOffset : baseOffset;
+
+        std::cout << "  [Sample " << i << "] " << s.name << " | Format: " << GetFormatString(mode) 
+                  << " | Channels: " << channels << " | Freq: " << frequency << "Hz"
+                  << " | Offset: 0x" << std::hex << (finalDisplayOffset + s.offset) 
+                  << " | Size: " << std::dec << s.size << " bytes | End: 0x" << std::hex << (finalDisplayOffset + s.offset + s.size) << std::dec << std::endl;
 
         currentDataOffset += Align(actualDataSize, 32);
         currentSampleHeaderOffset += sampleHeaderSize;
@@ -115,9 +138,8 @@ void ExtractFSB(const std::string& fsbPath) {
     CreateDirectoryIfNotExists(outDir);
 
     std::ifstream f(fsbPath, std::ios::binary);
-    int sIdx = 0;
     for (auto& s : samples) {
-        std::string sName = std::to_string(sIdx) + "_" + s.name + ".bin";
+        std::string sName = s.name + ".bin";
         std::ofstream sf(outDir + "/" + sName, std::ios::binary);
         f.seekg(s.offset);
         std::vector<char> buf(s.size);
@@ -125,7 +147,6 @@ void ExtractFSB(const std::string& fsbPath) {
         
         sf.write(buf.data(), s.size);
         sf.close();
-        sIdx++;
     }
     std::cout << "Extracted " << samples.size() << " samples to " << outDir << std::endl;
 }
