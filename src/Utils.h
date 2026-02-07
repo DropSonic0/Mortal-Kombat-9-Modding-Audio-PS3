@@ -44,6 +44,7 @@ inline uint32_t BE32(uint32_t v) {
 }
 
 bool FileExists(const std::string& name);
+bool IsDirectory(const std::string& path);
 std::string GetFileNameWithoutExtension(const std::string& path);
 void CreateDirectoryIfNotExists(const std::string& path);
 std::vector<std::string> GetFilesInDirectory(const std::string& path);
