@@ -3,6 +3,7 @@
 #include <windows.h>
 #else
 #include <dirent.h>
+#include <sys/stat.h>
 #endif
 
 uint32_t SwapEndian(uint32_t val) {
@@ -20,6 +21,19 @@ uint16_t SwapEndian(uint16_t val) {
 bool FileExists(const std::string& name) {
     std::ifstream f(name.c_str());
     return f.good();
+}
+
+bool IsDirectory(const std::string& path) {
+#ifdef _WIN32
+    DWORD dwAttrib = GetFileAttributesA(path.c_str());
+    return (dwAttrib != INVALID_FILE_ATTRIBUTES && (dwAttrib & FILE_ATTRIBUTE_DIRECTORY));
+#else
+    struct stat st;
+    if (stat(path.c_str(), &st) == 0) {
+        return S_ISDIR(st.st_mode);
+    }
+    return false;
+#endif
 }
 
 std::string GetFileNameWithoutExtension(const std::string& path) {
