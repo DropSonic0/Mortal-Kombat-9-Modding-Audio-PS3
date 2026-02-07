@@ -69,5 +69,8 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    std::cout << "\nPress Enter to exit..." << std::endl;
+    std::cin.get();
+
     return 0;
 }
