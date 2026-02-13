@@ -57,15 +57,19 @@ void ExtractXXX(const std::string& path) {
         if (c == 'F') {
             char sig[3];
             if (f.read(sig, 3)) {
-                if (sig[0] == 'S' && sig[1] == 'B' && (sig[2] == '4' || sig[2] == '5')) {
+                // Support 'FSB' followed by '1'-'6' (ASCII) or byte value 1-6
+                if (sig[0] == 'S' && sig[1] == 'B' &&
+                   ((sig[2] >= '1' && sig[2] <= '6') || (sig[2] >= 1 && sig[2] <= 6))) {
+
+                    char versionChar = (sig[2] >= 1 && sig[2] <= 6) ? (sig[2] + '0') : sig[2];
                     size_t startPos = (size_t)f.tellg() - 4;
-                    std::cout << "Found FSB" << sig[2] << " [Index " << fsbCount << "] at 0x" << std::hex << startPos << std::dec << std::endl;
+                    std::cout << "Found FSB" << versionChar << " [Index " << fsbCount << "] at 0x" << std::hex << startPos << std::dec << std::endl;
 
                     uint32_t shdrSize = 0;
                     uint32_t dataSize = 0;
                     uint32_t totalFSBSize = 0;
 
-                    if (sig[2] == '4') {
+                    if (versionChar == '4') {
                         FSB4_HEADER fsbHeader;
                         f.seekg(startPos);
                         f.read((char*)&fsbHeader, sizeof(fsbHeader));
@@ -101,8 +105,11 @@ void ExtractXXX(const std::string& path) {
                     }
 
                     if (toWrite < totalFSBSize) {
-                        std::vector<char> padding(totalFSBSize - toWrite, 0);
-                        fsbf.write(padding.data(), padding.size());
+                        size_t paddingSize = totalFSBSize - toWrite;
+                        if (paddingSize < 100 * 1024 * 1024) { // 100MB limit for safety
+                            std::vector<char> padding(paddingSize, 0);
+                            fsbf.write(padding.data(), padding.size());
+                        }
                     }
                     fsbf.close();
 
@@ -114,18 +121,21 @@ void ExtractXXX(const std::string& path) {
                         std::ifstream fsbIn(fsbOutPath, std::ios::binary);
                         for (auto& s : samples) {
                             if (s.offset + s.size <= totalFSBSize) {
-                                std::string sName = s.name + ".bin";
-                                std::ofstream sf(samplesDir + "/" + sName, std::ios::binary);
-                                fsbIn.seekg(s.offset);
-                                std::vector<char> sbuf(s.size);
-                                fsbIn.read(sbuf.data(), s.size);
-                                sf.write(sbuf.data(), s.size);
-                                sf.close();
+                                if (s.size > 0 && s.size < 100 * 1024 * 1024) { // 100MB limit
+                                    std::string sName = s.name + ".bin";
+                                    std::ofstream sf(samplesDir + "/" + sName, std::ios::binary);
+                                    fsbIn.seekg(s.offset);
+                                    std::vector<char> sbuf(s.size);
+                                    fsbIn.read(sbuf.data(), s.size);
+                                    sf.write(sbuf.data(), s.size);
+                                    sf.close();
+                                }
                             }
                         }
                     }
 
                     fsbCount++;
+                    f.clear(); // Important if we reached EOF during extraction
                     f.seekg(startPos + 4); // Continue after 'FSB'
                 } else {
                     f.seekg((size_t)f.tellg() - 3);
@@ -147,7 +157,7 @@ void PatchXXXAudio(const std::string& xxxPath, const std::string& sampleName, co
         if (c == 'F') {
             char sig[3];
             if (f.read(sig, 3)) {
-                if (sig[0] == 'S' && sig[1] == 'B' && sig[2] == '4') {
+                if (sig[0] == 'S' && sig[1] == 'B' && (sig[2] == '4' || sig[2] == 4)) {
                     size_t startPos = (size_t)f.tellg() - 4;
                     
                     FSB4_HEADER fsbHeader;
@@ -267,7 +277,7 @@ void PatchAllXXXAudio(const std::string& xxxPath, const std::string& folderPath)
         if (c == 'F') {
             char sig[3];
             if (f.read(sig, 3)) {
-                if (sig[0] == 'S' && sig[1] == 'B' && sig[2] == '4') {
+                if (sig[0] == 'S' && sig[1] == 'B' && (sig[2] == '4' || sig[2] == 4)) {
                     size_t startPos = (size_t)f.tellg() - 4;
                     
                     FSB4_HEADER fsbHeader;
