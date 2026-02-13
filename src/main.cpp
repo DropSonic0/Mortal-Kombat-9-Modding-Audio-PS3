@@ -76,10 +76,19 @@ int main(int argc, char* argv[]) {
                 std::getline(std::cin, path);
                 ExtractFSB(CleanPath(path));
             } else if (choice == "5") {
-                std::cout << "Enter file path to scan for MP3: ";
+                std::cout << "Enter file path or folder path to scan for MP3: ";
                 std::string path;
                 std::getline(std::cin, path);
-                ExtractMPEG(CleanPath(path));
+                path = CleanPath(path);
+                if (IsDirectory(path)) {
+                    std::vector<std::string> files = GetFilesInDirectory(path);
+                    for (const auto& file : files) {
+                        std::cout << "\nScanning " << file << "..." << std::endl;
+                        ExtractMPEG(path + "/" + file);
+                    }
+                } else {
+                    ExtractMPEG(path);
+                }
             } else {
                 std::cout << "Invalid option." << std::endl;
             }

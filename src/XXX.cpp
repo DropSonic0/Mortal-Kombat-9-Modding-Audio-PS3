@@ -65,10 +65,13 @@ void ExtractXXX(const std::string& path) {
         bytesRead = (size_t)f.gcount();
 
         for (size_t i = 0; i < bytesRead - 4; ++i) {
-            if (scannerBuf[i] == 'F' && scannerBuf[i+1] == 'S' && scannerBuf[i+2] == 'B') {
-                char vChar = scannerBuf[i+3];
+            if ((scannerBuf[i] == 'F' || scannerBuf[i] == 'f') &&
+                (scannerBuf[i+1] == 'S' || scannerBuf[i+1] == 's') &&
+                (scannerBuf[i+2] == 'B' || scannerBuf[i+2] == 'b')) {
+
+                unsigned char vChar = (unsigned char)scannerBuf[i+3];
                 char versionChar = (vChar >= 1 && vChar <= 9) ? (vChar + '0') :
-                                  ((vChar >= '1' && vChar <= '9') ? vChar : '?');
+                                  ((vChar >= '1' && vChar <= '9') ? (char)vChar : '?');
 
                 size_t startPos = currentBlockPos + i;
                 std::cout << "Found FSB" << versionChar << " [Index " << fsbCount << "] at 0x" << std::hex << startPos << std::dec << std::endl;
@@ -85,7 +88,6 @@ void ExtractXXX(const std::string& path) {
                     dataSize = LE32(fsbHeader.data_size);
                     totalFSBSize = sizeof(FSB4_HEADER) + shdrSize + dataSize;
                 } else {
-                    // FSB5 - just a placeholder chunk
                     totalFSBSize = 1024 * 1024; // 1MB safe chunk
                 }
 
@@ -114,7 +116,7 @@ void ExtractXXX(const std::string& path) {
 
                 if (toWrite < totalFSBSize) {
                     size_t paddingSize = totalFSBSize - toWrite;
-                    if (paddingSize < 100 * 1024 * 1024) { // 100MB limit for safety
+                    if (paddingSize < 100 * 1024 * 1024) {
                         std::vector<char> padding(paddingSize, 0);
                         fsbf.write(padding.data(), padding.size());
                     }
@@ -129,7 +131,7 @@ void ExtractXXX(const std::string& path) {
                     std::ifstream fsbIn(fsbOutPath, std::ios::binary);
                     for (auto& s : samples) {
                         if (s.offset + s.size <= totalFSBSize) {
-                            if (s.size > 0 && s.size < 100 * 1024 * 1024) { // 100MB limit
+                            if (s.size > 0 && s.size < 100 * 1024 * 1024) {
                                 std::string sName = s.name + ".bin";
                                 std::ofstream sf(samplesDir + "/" + sName, std::ios::binary);
                                 fsbIn.seekg(s.offset);
@@ -157,15 +159,14 @@ void PatchXXXAudio(const std::string& xxxPath, const std::string& sampleName, co
     std::ifstream f(xxxPath, std::ios::binary);
     if (!f.is_open()) return;
 
-    // Scan for FSB4 without loading everything
     bool found = false;
     while (true) {
         char c;
         if (!f.get(c)) break;
-        if (c == 'F') {
+        if (c == 'F' || c == 'f') {
             char sig[3];
             if (f.read(sig, 3)) {
-                if (sig[0] == 'S' && sig[1] == 'B') {
+                if ((sig[0] == 'S' || sig[0] == 's') && (sig[1] == 'B' || sig[1] == 'b')) {
                     size_t startPos = (size_t)f.tellg() - 4;
                     
                     FSB4_HEADER fsbHeader;
@@ -215,10 +216,6 @@ void PatchXXXAudio(const std::string& xxxPath, const std::string& sampleName, co
                                 return;
                             }
 
-                            if (newSize < actualDataSize / 1.5) {
-                                std::cout << "Warning: New data is much smaller than the original slot. If the sound is corrupt, use 'patchfromfsb' with a source FSB to update metadata (channels/frequency)." << std::endl;
-                            }
-
                             std::fstream xxxFile(xxxPath, std::ios::binary | std::ios::in | std::ios::out);
                             xxxFile.seekp(dataOffsetBase + currentDataOffset);
                             
@@ -237,7 +234,6 @@ void PatchXXXAudio(const std::string& xxxPath, const std::string& sampleName, co
                             break;
                         }
                         
-                        // Advance
                         f.seekg(currentSampleHeaderOffset + 2 + 30 + 4);
                         uint32_t sampleCompressedSize;
                         f.read((char*)&sampleCompressedSize, 4);
@@ -267,25 +263,19 @@ void PatchXXXAudio(const std::string& xxxPath, const std::string& sampleName, co
 
 void PatchAllXXXAudio(const std::string& xxxPath, const std::string& folderPath) {
     std::vector<std::string> files = GetFilesInDirectory(folderPath);
-    if (files.empty()) {
-        std::cout << "No files found in folder " << folderPath << std::endl;
-        return;
-    }
+    if (files.empty()) return;
 
     std::ifstream f(xxxPath, std::ios::binary);
-    if (!f.is_open()) {
-        std::cout << "Failed to open " << xxxPath << std::endl;
-        return;
-    }
+    if (!f.is_open()) return;
 
     int patchCount = 0;
     while (true) {
         char c;
         if (!f.get(c)) break;
-        if (c == 'F') {
+        if (c == 'F' || c == 'f') {
             char sig[3];
             if (f.read(sig, 3)) {
-                if (sig[0] == 'S' && sig[1] == 'B') {
+                if ((sig[0] == 'S' || sig[0] == 's') && (sig[1] == 'B' || sig[1] == 'b')) {
                     size_t startPos = (size_t)f.tellg() - 4;
                     
                     FSB4_HEADER fsbHeader;
@@ -321,12 +311,9 @@ void PatchAllXXXAudio(const std::string& xxxPath, const std::string& folderPath)
 
                         uint32_t actualDataSize = (compressedSize > uncompressedSize) ? compressedSize : uncompressedSize;
 
-                        // Check if we have a matching file
                         std::string matchingFile = "";
                         for (const auto& file : files) {
-                            if (file == sampleName || file == (sampleName + ".bin") ||
-                                file == (std::to_string(j) + ".bin") ||
-                                file.find(std::to_string(j) + "_") == 0) {
+                            if (file == sampleName || file == (sampleName + ".bin")) {
                                 matchingFile = folderPath + "/" + file;
                                 break;
                             }
@@ -339,12 +326,7 @@ void PatchAllXXXAudio(const std::string& xxxPath, const std::string& folderPath)
                                 uint32_t newSize = (uint32_t)newData.tellg();
                                 newData.seekg(0, std::ios::beg);
 
-                                if (newSize > actualDataSize) {
-                                    std::cout << "Warning: " << matchingFile << " too large (" << newSize << " > " << actualDataSize << "). Skipping." << std::endl;
-                                } else {
-                                    if (newSize < actualDataSize / 1.5) {
-                                        std::cout << "  Warning: New data is much smaller than original. Suggest using 'patchfromfsb'." << std::endl;
-                                    }
+                                if (newSize <= actualDataSize) {
                                     std::fstream xxxFile(xxxPath, std::ios::binary | std::ios::in | std::ios::out);
                                     xxxFile.seekp(dataOffsetBase + currentDataOffset);
                                     
@@ -357,7 +339,7 @@ void PatchAllXXXAudio(const std::string& xxxPath, const std::string& folderPath)
                                         xxxFile.write(padding.data(), padding.size());
                                     }
                                     
-                                    std::cout << "Auto-patched: " << sampleName << " [Offset: 0x" << std::hex << (dataOffsetBase + currentDataOffset) << std::dec << "] (" << actualDataSize << " -> " << newSize << " bytes)" << std::endl;
+                                    std::cout << "Auto-patched: " << sampleName << " at 0x" << std::hex << (dataOffsetBase + currentDataOffset) << std::dec << std::endl;
                                     patchCount++;
                                 }
                             }
