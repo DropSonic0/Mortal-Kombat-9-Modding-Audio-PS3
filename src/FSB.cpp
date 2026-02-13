@@ -3,21 +3,21 @@
 #include <algorithm>
 
 std::string GetFormatString(uint32_t mode) {
-    if (mode & 0x00000008) return "PCM8";
-    if (mode & 0x00000010) return "PCM16";
-    if (mode & 0x00000020) return "PCM24";
-    if (mode & 0x00000040) return "PCM32";
-    if (mode & 0x00000080) return "PCMFLOAT";
-    if (mode & 0x00000100) return "GCADPCM";
-    if (mode & 0x00000200) return "IMAADPCM";
-    if (mode & 0x00000400) return "VAG";
-    if (mode & 0x00000800) return "HEVAG";
-    if (mode & 0x00001000) return "XMA";
-    if (mode & 0x00002000) return "MPEG";
-    if (mode & 0x00004000) return "CELT";
-    if (mode & 0x00008000) return "AT9";
-    if (mode & 0x00010000) return "XWMA";
     if (mode & 0x00020000) return "VORBIS";
+    if (mode & 0x00010000) return "XWMA";
+    if (mode & 0x00008000) return "AT9";
+    if (mode & 0x00004000) return "CELT";
+    if (mode & 0x00002000) return "MPEG";
+    if (mode & 0x00001000) return "XMA";
+    if (mode & 0x00000800) return "HEVAG";
+    if (mode & 0x00000400) return "VAG";
+    if (mode & 0x00000200) return "IMAADPCM";
+    if (mode & 0x00000100) return "GCADPCM";
+    if (mode & 0x00000080) return "PCMFLOAT";
+    if (mode & 0x00000040) return "PCM32";
+    if (mode & 0x00000020) return "PCM24";
+    if (mode & 0x00000010) return "PCM16";
+    if (mode & 0x00000008) return "PCM8";
     return "UNKNOWN";
 }
 
@@ -89,25 +89,33 @@ std::vector<FSBSample> ParseFSB(const std::string& fsbPath, uint32_t baseOffset,
         uncompressedSize = LE32(uncompressedSize);
 
         uint32_t loopStart, loopEnd, mode;
-        f.read((char*)&loopStart, 4);
-        f.read((char*)&loopEnd, 4);
-
-        // Heuristic for MK9 PS3: frequency is often at 52, mode is elsewhere or packed.
-        // But we'll try to detect if 52 looks like a frequency (e.g. 44100, 48000).
-        uint32_t val52;
-        f.read((char*)&val52, 4);
-        val52 = LE32(val52);
-
         int32_t frequency;
-        if (val52 == 44100 || val52 == 48000 || val52 == 32000 || val52 == 24000 || val52 == 22050) {
-            frequency = val52;
-            mode = 0; // Unknown/TBD
-            // Try to find mode at 48 or 64?
+
+        if (sampleHeaderSize >= 80) {
+            // MK9 PS3 Layout
+            f.read((char*)&loopStart, 4); // 44
+            f.read((char*)&mode, 4);      // 48
+
+            uint32_t freqVal;
+            f.read((char*)&freqVal, 4);   // 52
+
+            loopStart = LE32(loopStart);
+            mode = LE32(mode);
+            frequency = (int32_t)LE32(freqVal);
+            loopEnd = 0; // Simplified
         } else {
-            mode = val52;
-            uint32_t val56;
-            f.read((char*)&val56, 4);
-            frequency = (int32_t)LE32(val56);
+            // Standard FSB4 Layout
+            f.read((char*)&loopStart, 4); // 44
+            f.read((char*)&loopEnd, 4);   // 48
+            f.read((char*)&mode, 4);      // 52
+
+            uint32_t freqVal;
+            f.read((char*)&freqVal, 4);   // 56
+
+            loopStart = LE32(loopStart);
+            loopEnd = LE32(loopEnd);
+            mode = LE32(mode);
+            frequency = (int32_t)LE32(freqVal);
         }
 
         uint16_t channels = 1;
