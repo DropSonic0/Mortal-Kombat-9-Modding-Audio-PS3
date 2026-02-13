@@ -11,10 +11,63 @@ void PrintUsage() {
     std::cout << "  Extr. FSB:  MK9Tool extractfsb <fsb_file>" << std::endl;
 }
 
+std::string CleanPath(std::string path) {
+    if (!path.empty() && path.front() == '"' && path.back() == '"') {
+        path = path.substr(1, path.size() - 2);
+    }
+    return path;
+}
+
 int main(int argc, char* argv[]) {
     if (argc < 2) {
-        PrintUsage();
-        return 1;
+        while (true) {
+            std::cout << "\nMK9Tool Interactive Menu" << std::endl;
+            std::cout << "1. Extract .XXX container" << std::endl;
+            std::cout << "2. Patch All (Folder to .XXX)" << std::endl;
+            std::cout << "3. Patch Single Sample (.bin to .XXX)" << std::endl;
+            std::cout << "4. Extract .FSB file" << std::endl;
+            std::cout << "0. Exit" << std::endl;
+            std::cout << "Select an option: ";
+
+            std::string choice;
+            std::getline(std::cin, choice);
+
+            if (choice == "0") break;
+            else if (choice == "1") {
+                std::cout << "Enter .xxx path: ";
+                std::string path;
+                std::getline(std::cin, path);
+                ExtractXXX(CleanPath(path));
+            } else if (choice == "2") {
+                std::cout << "Enter .xxx path: ";
+                std::string xxxPath;
+                std::getline(std::cin, xxxPath);
+                std::cout << "Enter folder path with .bin files: ";
+                std::string folderPath;
+                std::getline(std::cin, folderPath);
+                PatchAllXXXAudio(CleanPath(xxxPath), CleanPath(folderPath));
+            } else if (choice == "3") {
+                std::cout << "Enter .xxx path: ";
+                std::string xxxPath;
+                std::getline(std::cin, xxxPath);
+                std::cout << "Enter sample name (e.g. sfx_hit): ";
+                std::string sampleName;
+                std::getline(std::cin, sampleName);
+                std::cout << "Enter new .bin path: ";
+                std::string binPath;
+                std::getline(std::cin, binPath);
+                PatchXXXAudio(CleanPath(xxxPath), sampleName, CleanPath(binPath));
+            } else if (choice == "4") {
+                std::cout << "Enter .fsb path: ";
+                std::string path;
+                std::getline(std::cin, path);
+                ExtractFSB(CleanPath(path));
+            } else {
+                std::cout << "Invalid option." << std::endl;
+            }
+            std::cout << "\n-----------------------------------" << std::endl;
+        }
+        return 0;
     }
 
     std::string arg1 = argv[1];
@@ -43,10 +96,7 @@ int main(int argc, char* argv[]) {
             std::string xxx_file;
             std::cout << "Enter the .xxx file to inject into: ";
             std::getline(std::cin, xxx_file);
-            if (!xxx_file.empty() && xxx_file.front() == '"' && xxx_file.back() == '"') {
-                xxx_file = xxx_file.substr(1, xxx_file.size() - 2);
-            }
-            PatchAllXXXAudio(xxx_file, input);
+            PatchAllXXXAudio(CleanPath(xxx_file), input);
         } else if (input.size() >= 4 && (input.substr(input.size() - 4) == ".xxx" || input.substr(input.size() - 4) == ".XXX")) {
             ExtractXXX(input);
         } else if (input.size() >= 4 && (input.substr(input.size() - 4) == ".fsb" || input.substr(input.size() - 4) == ".FSB")) {
@@ -55,11 +105,8 @@ int main(int argc, char* argv[]) {
             std::string xxx_file;
             std::cout << "Enter the .xxx file to inject into: ";
             std::getline(std::cin, xxx_file);
-            if (!xxx_file.empty() && xxx_file.front() == '"' && xxx_file.back() == '"') {
-                xxx_file = xxx_file.substr(1, xxx_file.size() - 2);
-            }
             std::string sample_name = GetFileNameWithoutExtension(input);
-            PatchXXXAudio(xxx_file, sample_name, input);
+            PatchXXXAudio(CleanPath(xxx_file), sample_name, input);
         } else {
             PrintUsage();
             return 1;
