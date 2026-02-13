@@ -71,82 +71,81 @@ void ExtractXXX(const std::string& path) {
                                   ((vChar >= '1' && vChar <= '9') ? vChar : '?');
 
                 size_t startPos = currentBlockPos + i;
-                    std::cout << "Found FSB" << versionChar << " [Index " << fsbCount << "] at 0x" << std::hex << startPos << std::dec << std::endl;
+                std::cout << "Found FSB" << versionChar << " [Index " << fsbCount << "] at 0x" << std::hex << startPos << std::dec << std::endl;
 
-                    uint32_t shdrSize = 0;
-                    uint32_t dataSize = 0;
-                    uint32_t totalFSBSize = 0;
+                uint32_t shdrSize = 0;
+                uint32_t dataSize = 0;
+                uint32_t totalFSBSize = 0;
 
-                    if (versionChar == '4') {
-                        FSB4_HEADER fsbHeader;
-                        f.seekg(startPos);
-                        f.read((char*)&fsbHeader, sizeof(fsbHeader));
-                        shdrSize = LE32(fsbHeader.shdr_size);
-                        dataSize = LE32(fsbHeader.data_size);
-                        totalFSBSize = sizeof(FSB4_HEADER) + shdrSize + dataSize;
-                    } else {
-                        // FSB5 - just a placeholder chunk
-                        totalFSBSize = 1024 * 1024; // 1MB safe chunk
-                    }
-
-                    f.seekg(0, std::ios::end);
-                    size_t fileSize = (size_t)f.tellg();
+                if (versionChar == '4') {
+                    FSB4_HEADER fsbHeader;
                     f.seekg(startPos);
+                    f.read((char*)&fsbHeader, sizeof(fsbHeader));
+                    shdrSize = LE32(fsbHeader.shdr_size);
+                    dataSize = LE32(fsbHeader.data_size);
+                    totalFSBSize = sizeof(FSB4_HEADER) + shdrSize + dataSize;
+                } else {
+                    // FSB5 - just a placeholder chunk
+                    totalFSBSize = 1024 * 1024; // 1MB safe chunk
+                }
 
-                    size_t available = fileSize - startPos;
-                    size_t toWrite = totalFSBSize;
-                    if (toWrite > available) {
-                        toWrite = available;
-                        std::cout << "  -> Detected Streaming Bank (truncated). Padding to match header size." << std::endl;
+                f.seekg(0, std::ios::end);
+                size_t fileSize = (size_t)f.tellg();
+                f.seekg(startPos);
+
+                size_t available = fileSize - startPos;
+                size_t toWrite = totalFSBSize;
+                if (toWrite > available) {
+                    toWrite = available;
+                    std::cout << "  -> Detected Streaming Bank (truncated). Padding to match header size." << std::endl;
+                }
+
+                std::string fsbOutPath = outDir + "/audio_" + std::to_string(fsbCount) + ".fsb";
+                std::ofstream fsbf(fsbOutPath, std::ios::binary);
+
+                size_t remaining = toWrite;
+                while (remaining > 0) {
+                    size_t chunk = (remaining > sizeof(buf)) ? sizeof(buf) : remaining;
+                    f.read(buf, chunk);
+                    fsbf.write(buf, f.gcount());
+                    remaining -= (size_t)f.gcount();
+                    if (f.gcount() == 0) break;
+                }
+
+                if (toWrite < totalFSBSize) {
+                    size_t paddingSize = totalFSBSize - toWrite;
+                    if (paddingSize < 100 * 1024 * 1024) { // 100MB limit for safety
+                        std::vector<char> padding(paddingSize, 0);
+                        fsbf.write(padding.data(), padding.size());
                     }
+                }
+                fsbf.close();
 
-                    std::string fsbOutPath = outDir + "/audio_" + std::to_string(fsbCount) + ".fsb";
-                    std::ofstream fsbf(fsbOutPath, std::ios::binary);
-                    
-                    size_t remaining = toWrite;
-                    while (remaining > 0) {
-                        size_t chunk = (remaining > sizeof(buf)) ? sizeof(buf) : remaining;
-                        f.read(buf, chunk);
-                        fsbf.write(buf, f.gcount());
-                        remaining -= f.gcount();
-                        if (f.gcount() == 0) break;
-                    }
-
-                    if (toWrite < totalFSBSize) {
-                        size_t paddingSize = totalFSBSize - toWrite;
-                        if (paddingSize < 100 * 1024 * 1024) { // 100MB limit for safety
-                            std::vector<char> padding(paddingSize, 0);
-                            fsbf.write(padding.data(), padding.size());
-                        }
-                    }
-                    fsbf.close();
-
-                    // Sample extraction
-                    std::string samplesDir = outDir + "/audio_" + std::to_string(fsbCount) + "_samples";
-                    CreateDirectoryIfNotExists(samplesDir);
-                    auto samples = ParseFSB(fsbOutPath, 0, (uint32_t)startPos);
-                    if (!samples.empty()) {
-                        std::ifstream fsbIn(fsbOutPath, std::ios::binary);
-                        for (auto& s : samples) {
-                            if (s.offset + s.size <= totalFSBSize) {
-                                if (s.size > 0 && s.size < 100 * 1024 * 1024) { // 100MB limit
-                                    std::string sName = s.name + ".bin";
-                                    std::ofstream sf(samplesDir + "/" + sName, std::ios::binary);
-                                    fsbIn.seekg(s.offset);
-                                    std::vector<char> sbuf(s.size);
-                                    fsbIn.read(sbuf.data(), s.size);
-                                    sf.write(sbuf.data(), s.size);
-                                    sf.close();
-                                }
+                // Sample extraction
+                std::string samplesDir = outDir + "/audio_" + std::to_string(fsbCount) + "_samples";
+                CreateDirectoryIfNotExists(samplesDir);
+                auto samples = ParseFSB(fsbOutPath, 0, (uint32_t)startPos);
+                if (!samples.empty()) {
+                    std::ifstream fsbIn(fsbOutPath, std::ios::binary);
+                    for (auto& s : samples) {
+                        if (s.offset + s.size <= totalFSBSize) {
+                            if (s.size > 0 && s.size < 100 * 1024 * 1024) { // 100MB limit
+                                std::string sName = s.name + ".bin";
+                                std::ofstream sf(samplesDir + "/" + sName, std::ios::binary);
+                                fsbIn.seekg(s.offset);
+                                std::vector<char> sbuf(s.size);
+                                fsbIn.read(sbuf.data(), s.size);
+                                sf.write(sbuf.data(), s.size);
+                                sf.close();
                             }
                         }
                     }
-
-                    fsbCount++;
-                    f.clear();
-                    f.seekg(startPos + 4);
-                    goto next_fsb_block;
                 }
+
+                fsbCount++;
+                f.clear();
+                f.seekg(startPos + 4);
+                goto next_fsb_block;
             }
         }
         f.seekg(currentBlockPos + bytesRead - 3);
@@ -375,4 +374,3 @@ void PatchAllXXXAudio(const std::string& xxxPath, const std::string& folderPath)
     }
     std::cout << "Finished. Total samples patched: " << patchCount << std::endl;
 }
-
