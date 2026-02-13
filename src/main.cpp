@@ -34,10 +34,21 @@ int main(int argc, char* argv[]) {
 
             if (choice == "0") break;
             else if (choice == "1") {
-                std::cout << "Enter .xxx path: ";
+                std::cout << "Enter .xxx path or folder path: ";
                 std::string path;
                 std::getline(std::cin, path);
-                ExtractXXX(CleanPath(path));
+                path = CleanPath(path);
+                if (IsDirectory(path)) {
+                    std::vector<std::string> files = GetFilesInDirectory(path);
+                    for (const auto& file : files) {
+                        if (file.size() >= 4 && (file.substr(file.size() - 4) == ".xxx" || file.substr(file.size() - 4) == ".XXX")) {
+                            std::cout << "\nProcessing " << file << "..." << std::endl;
+                            ExtractXXX(path + "/" + file);
+                        }
+                    }
+                } else {
+                    ExtractXXX(path);
+                }
             } else if (choice == "2") {
                 std::cout << "Enter .xxx path: ";
                 std::string xxxPath;
@@ -93,10 +104,23 @@ int main(int argc, char* argv[]) {
     } else if (argc == 2) {
         std::string input = argv[1];
         if (IsDirectory(input)) {
-            std::string xxx_file;
-            std::cout << "Enter the .xxx file to inject into: ";
-            std::getline(std::cin, xxx_file);
-            PatchAllXXXAudio(CleanPath(xxx_file), input);
+            std::cout << "Directory detected. Choose action:\n1. Patch all .bin files from this folder into an .xxx file\n2. Extract all .xxx files in this folder\nSelect (1-2): ";
+            std::string action;
+            std::getline(std::cin, action);
+            if (action == "1") {
+                std::cout << "Enter the .xxx file to inject into: ";
+                std::string xxx_file;
+                std::getline(std::cin, xxx_file);
+                PatchAllXXXAudio(CleanPath(xxx_file), input);
+            } else if (action == "2") {
+                std::vector<std::string> files = GetFilesInDirectory(input);
+                for (const auto& file : files) {
+                    if (file.size() >= 4 && (file.substr(file.size() - 4) == ".xxx" || file.substr(file.size() - 4) == ".XXX")) {
+                        std::cout << "\nProcessing " << file << "..." << std::endl;
+                        ExtractXXX(input + "/" + file);
+                    }
+                }
+            }
         } else if (input.size() >= 4 && (input.substr(input.size() - 4) == ".xxx" || input.substr(input.size() - 4) == ".XXX")) {
             ExtractXXX(input);
         } else if (input.size() >= 4 && (input.substr(input.size() - 4) == ".fsb" || input.substr(input.size() - 4) == ".FSB")) {
