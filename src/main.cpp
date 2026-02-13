@@ -1,4 +1,5 @@
 #include "XXX.h"
+#include "MPEG.h"
 #include <iostream>
 #include <string>
 
@@ -26,6 +27,7 @@ int main(int argc, char* argv[]) {
             std::cout << "2. Patch All (Folder to .XXX)" << std::endl;
             std::cout << "3. Patch Single Sample (.bin to .XXX)" << std::endl;
             std::cout << "4. Extract .FSB file" << std::endl;
+            std::cout << "5. Scan and Extract MPEG/MP3 (Advanced)" << std::endl;
             std::cout << "0. Exit" << std::endl;
             std::cout << "Select an option: ";
 
@@ -73,6 +75,11 @@ int main(int argc, char* argv[]) {
                 std::string path;
                 std::getline(std::cin, path);
                 ExtractFSB(CleanPath(path));
+            } else if (choice == "5") {
+                std::cout << "Enter file path to scan for MP3: ";
+                std::string path;
+                std::getline(std::cin, path);
+                ExtractMPEG(CleanPath(path));
             } else {
                 std::cout << "Invalid option." << std::endl;
             }
@@ -101,10 +108,16 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         ExtractFSB(argv[2]);
+    } else if (arg1 == "mpegscan") {
+        if (argc < 3) {
+            PrintUsage();
+            return 1;
+        }
+        ExtractMPEG(argv[2]);
     } else if (argc == 2) {
         std::string input = argv[1];
         if (IsDirectory(input)) {
-            std::cout << "Directory detected. Choose action:\n1. Patch all .bin files from this folder into an .xxx file\n2. Extract all .xxx files in this folder\nSelect (1-2): ";
+            std::cout << "Directory detected. Choose action:\n1. Patch all .bin files from this folder into an .xxx file\n2. Extract all .xxx files in this folder\n3. Scan all files in this folder for MPEG/MP3\nSelect (1-3): ";
             std::string action;
             std::getline(std::cin, action);
             if (action == "1") {
@@ -119,6 +132,12 @@ int main(int argc, char* argv[]) {
                         std::cout << "\nProcessing " << file << "..." << std::endl;
                         ExtractXXX(input + "/" + file);
                     }
+                }
+            } else if (action == "3") {
+                std::vector<std::string> files = GetFilesInDirectory(input);
+                for (const auto& file : files) {
+                    std::cout << "\nScanning " << file << "..." << std::endl;
+                    ExtractMPEG(input + "/" + file);
                 }
             }
         } else if (input.size() >= 4 && (input.substr(input.size() - 4) == ".xxx" || input.substr(input.size() - 4) == ".XXX")) {

@@ -47,22 +47,30 @@ void ExtractXXX(const std::string& path) {
 
     // Scanning for FSB without loading entire file
     f.clear();
+    f.seekg(0, std::ios::end);
+    size_t totalFileSize = (size_t)f.tellg();
     f.seekg(0, std::ios::beg);
     
     int fsbCount = 0;
-    size_t pos = 0;
-    while (true) {
-        char c;
-        if (!f.get(c)) break;
-        if (c == 'F') {
-            char sig[3];
-            if (f.read(sig, 3)) {
-                // Support 'FSB' followed by '1'-'6' (ASCII) or byte value 1-6
-                if (sig[0] == 'S' && sig[1] == 'B' &&
-                   ((sig[2] >= '1' && sig[2] <= '6') || (sig[2] >= 1 && sig[2] <= 6))) {
+    const size_t scannerBlockSize = 1024 * 1024;
+    std::vector<char> scannerBuf(scannerBlockSize + 4);
 
-                    char versionChar = (sig[2] >= 1 && sig[2] <= 6) ? (sig[2] + '0') : sig[2];
-                    size_t startPos = (size_t)f.tellg() - 4;
+    size_t currentBlockPos = 0;
+    size_t bytesRead = 0;
+    while (true) {
+        currentBlockPos = (size_t)f.tellg();
+        if (!f.read(scannerBuf.data(), scannerBlockSize)) {
+            if (f.gcount() < 4) break;
+        }
+        bytesRead = (size_t)f.gcount();
+
+        for (size_t i = 0; i < bytesRead - 4; ++i) {
+            if (scannerBuf[i] == 'F' && scannerBuf[i+1] == 'S' && scannerBuf[i+2] == 'B') {
+                char vChar = scannerBuf[i+3];
+                char versionChar = (vChar >= 1 && vChar <= 9) ? (vChar + '0') :
+                                  ((vChar >= '1' && vChar <= '9') ? vChar : '?');
+
+                size_t startPos = currentBlockPos + i;
                     std::cout << "Found FSB" << versionChar << " [Index " << fsbCount << "] at 0x" << std::hex << startPos << std::dec << std::endl;
 
                     uint32_t shdrSize = 0;
@@ -135,13 +143,14 @@ void ExtractXXX(const std::string& path) {
                     }
 
                     fsbCount++;
-                    f.clear(); // Important if we reached EOF during extraction
-                    f.seekg(startPos + 4); // Continue after 'FSB'
-                } else {
-                    f.seekg((size_t)f.tellg() - 3);
+                    f.clear();
+                    f.seekg(startPos + 4);
+                    goto next_fsb_block;
                 }
             }
         }
+        f.seekg(currentBlockPos + bytesRead - 3);
+        next_fsb_block:;
     }
 }
 
@@ -157,7 +166,7 @@ void PatchXXXAudio(const std::string& xxxPath, const std::string& sampleName, co
         if (c == 'F') {
             char sig[3];
             if (f.read(sig, 3)) {
-                if (sig[0] == 'S' && sig[1] == 'B' && (sig[2] == '4' || sig[2] == 4)) {
+                if (sig[0] == 'S' && sig[1] == 'B') {
                     size_t startPos = (size_t)f.tellg() - 4;
                     
                     FSB4_HEADER fsbHeader;
@@ -277,7 +286,7 @@ void PatchAllXXXAudio(const std::string& xxxPath, const std::string& folderPath)
         if (c == 'F') {
             char sig[3];
             if (f.read(sig, 3)) {
-                if (sig[0] == 'S' && sig[1] == 'B' && (sig[2] == '4' || sig[2] == 4)) {
+                if (sig[0] == 'S' && sig[1] == 'B') {
                     size_t startPos = (size_t)f.tellg() - 4;
                     
                     FSB4_HEADER fsbHeader;
