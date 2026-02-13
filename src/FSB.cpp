@@ -42,6 +42,11 @@ std::vector<FSBSample> ParseFSB(const std::string& fsbPath, uint32_t baseOffset,
     uint32_t shdrSize = LE32(header.shdr_size);
     uint32_t dataSize = LE32(header.data_size);
 
+    if (numSamples > 10000) {
+        std::cout << "Warning: Too many samples (" << numSamples << "). FSB might be Big-Endian or corrupt." << std::endl;
+        return samples;
+    }
+
     uint32_t currentSampleHeaderOffset = sizeof(FSB4_HEADER);
     uint32_t dataOffsetBase = sizeof(FSB4_HEADER) + shdrSize;
     uint32_t currentDataOffset = 0;
@@ -49,8 +54,13 @@ std::vector<FSBSample> ParseFSB(const std::string& fsbPath, uint32_t baseOffset,
     for (uint32_t i = 0; i < numSamples; ++i) {
         f.seekg(baseOffset + currentSampleHeaderOffset);
         uint16_t sampleHeaderSize;
-        f.read((char*)&sampleHeaderSize, 2);
+        if (!f.read((char*)&sampleHeaderSize, 2)) break;
         sampleHeaderSize = LE16(sampleHeaderSize);
+
+        if (sampleHeaderSize == 0) {
+            std::cout << "Error: Sample header size is 0 at offset 0x" << std::hex << (baseOffset + currentSampleHeaderOffset) << std::dec << std::endl;
+            break;
+        }
 
         char name[31];
         memset(name, 0, 31);
@@ -66,9 +76,9 @@ std::vector<FSBSample> ParseFSB(const std::string& fsbPath, uint32_t baseOffset,
         // 62: def_pan(2), 64: def_pri(2), 66: num_channels(2)
         
         f.seekg(baseOffset + currentSampleHeaderOffset + 32);
-        uint32_t numSamples;
-        f.read((char*)&numSamples, 4);
-        numSamples = LE32(numSamples);
+        uint32_t sampleNumSamples;
+        f.read((char*)&sampleNumSamples, 4);
+        sampleNumSamples = LE32(sampleNumSamples);
 
         uint32_t compressedSize;
         f.read((char*)&compressedSize, 4);
@@ -81,19 +91,36 @@ std::vector<FSBSample> ParseFSB(const std::string& fsbPath, uint32_t baseOffset,
         uint32_t loopStart, loopEnd, mode;
         f.read((char*)&loopStart, 4);
         f.read((char*)&loopEnd, 4);
-        f.read((char*)&mode, 4);
-        loopStart = LE32(loopStart);
-        loopEnd = LE32(loopEnd);
-        mode = LE32(mode);
+
+        // Heuristic for MK9 PS3: frequency is often at 52, mode is elsewhere or packed.
+        // But we'll try to detect if 52 looks like a frequency (e.g. 44100, 48000).
+        uint32_t val52;
+        f.read((char*)&val52, 4);
+        val52 = LE32(val52);
 
         int32_t frequency;
-        f.read((char*)&frequency, 4);
-        frequency = (int32_t)LE32((uint32_t)frequency);
+        if (val52 == 44100 || val52 == 48000 || val52 == 32000 || val52 == 24000 || val52 == 22050) {
+            frequency = val52;
+            mode = 0; // Unknown/TBD
+            // Try to find mode at 48 or 64?
+        } else {
+            mode = val52;
+            uint32_t val56;
+            f.read((char*)&val56, 4);
+            frequency = (int32_t)LE32(val56);
+        }
 
-        f.seekg(baseOffset + currentSampleHeaderOffset + 66);
-        uint16_t channels;
-        f.read((char*)&channels, 2);
-        channels = LE16(channels);
+        uint16_t channels = 1;
+        if (sampleHeaderSize >= 68) {
+            f.seekg(baseOffset + currentSampleHeaderOffset + 62);
+            f.read((char*)&channels, 2);
+            channels = LE16(channels);
+            if (channels > 8) { // Garbage? Try offset 66
+                f.seekg(baseOffset + currentSampleHeaderOffset + 66);
+                f.read((char*)&channels, 2);
+                channels = LE16(channels);
+            }
+        }
 
         // Heuristic: Use the larger of compressed and uncompressed size for data offset calculation.
         uint32_t actualDataSize = (compressedSize > uncompressedSize) ? compressedSize : uncompressedSize;
@@ -104,7 +131,7 @@ std::vector<FSBSample> ParseFSB(const std::string& fsbPath, uint32_t baseOffset,
         s.size = actualDataSize;
         s.headerOffset = currentSampleHeaderOffset;
         s.headerSize = sampleHeaderSize;
-        s.numSamples = numSamples;
+        s.numSamples = sampleNumSamples;
         s.uncompressedSize = uncompressedSize;
         s.loopStart = loopStart;
         s.loopEnd = loopEnd;
