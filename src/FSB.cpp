@@ -3,21 +3,21 @@
 #include <algorithm>
 
 std::string GetFormatString(uint32_t mode) {
-    if (mode & 0x00000008) return "PCM8";
-    if (mode & 0x00000010) return "PCM16";
-    if (mode & 0x00000020) return "PCM24";
-    if (mode & 0x00000040) return "PCM32";
-    if (mode & 0x00000080) return "PCMFLOAT";
-    if (mode & 0x00000100) return "GCADPCM";
-    if (mode & 0x00000200) return "IMAADPCM";
-    if (mode & 0x00000400) return "VAG";
-    if (mode & 0x00000800) return "HEVAG";
-    if (mode & 0x00001000) return "XMA";
-    if (mode & 0x00002000) return "MPEG";
-    if (mode & 0x00004000) return "CELT";
-    if (mode & 0x00008000) return "AT9";
-    if (mode & 0x00010000) return "XWMA";
     if (mode & 0x00020000) return "VORBIS";
+    if (mode & 0x00010000) return "XWMA";
+    if (mode & 0x00008000) return "AT9";
+    if (mode & 0x00004000) return "CELT";
+    if (mode & 0x00002000) return "MPEG";
+    if (mode & 0x00001000) return "XMA";
+    if (mode & 0x00000800) return "HEVAG";
+    if (mode & 0x00000400) return "VAG";
+    if (mode & 0x00000200) return "IMAADPCM";
+    if (mode & 0x00000100) return "GCADPCM";
+    if (mode & 0x00000080) return "PCMFLOAT";
+    if (mode & 0x00000040) return "PCM32";
+    if (mode & 0x00000020) return "PCM24";
+    if (mode & 0x00000010) return "PCM16";
+    if (mode & 0x00000008) return "PCM8";
     return "UNKNOWN";
 }
 
@@ -42,6 +42,11 @@ std::vector<FSBSample> ParseFSB(const std::string& fsbPath, uint32_t baseOffset,
     uint32_t shdrSize = LE32(header.shdr_size);
     uint32_t dataSize = LE32(header.data_size);
 
+    if (numSamples > 10000) {
+        std::cout << "Warning: Too many samples (" << numSamples << "). FSB might be Big-Endian or corrupt." << std::endl;
+        return samples;
+    }
+
     uint32_t currentSampleHeaderOffset = sizeof(FSB4_HEADER);
     uint32_t dataOffsetBase = sizeof(FSB4_HEADER) + shdrSize;
     uint32_t currentDataOffset = 0;
@@ -49,8 +54,13 @@ std::vector<FSBSample> ParseFSB(const std::string& fsbPath, uint32_t baseOffset,
     for (uint32_t i = 0; i < numSamples; ++i) {
         f.seekg(baseOffset + currentSampleHeaderOffset);
         uint16_t sampleHeaderSize;
-        f.read((char*)&sampleHeaderSize, 2);
+        if (!f.read((char*)&sampleHeaderSize, 2)) break;
         sampleHeaderSize = LE16(sampleHeaderSize);
+
+        if (sampleHeaderSize == 0) {
+            std::cout << "Error: Sample header size is 0 at offset 0x" << std::hex << (baseOffset + currentSampleHeaderOffset) << std::dec << std::endl;
+            break;
+        }
 
         char name[31];
         memset(name, 0, 31);
@@ -66,9 +76,9 @@ std::vector<FSBSample> ParseFSB(const std::string& fsbPath, uint32_t baseOffset,
         // 62: def_pan(2), 64: def_pri(2), 66: num_channels(2)
         
         f.seekg(baseOffset + currentSampleHeaderOffset + 32);
-        uint32_t numSamples;
-        f.read((char*)&numSamples, 4);
-        numSamples = LE32(numSamples);
+        uint32_t sampleNumSamples;
+        f.read((char*)&sampleNumSamples, 4);
+        sampleNumSamples = LE32(sampleNumSamples);
 
         uint32_t compressedSize;
         f.read((char*)&compressedSize, 4);
@@ -79,21 +89,46 @@ std::vector<FSBSample> ParseFSB(const std::string& fsbPath, uint32_t baseOffset,
         uncompressedSize = LE32(uncompressedSize);
 
         uint32_t loopStart, loopEnd, mode;
-        f.read((char*)&loopStart, 4);
-        f.read((char*)&loopEnd, 4);
-        f.read((char*)&mode, 4);
-        loopStart = LE32(loopStart);
-        loopEnd = LE32(loopEnd);
-        mode = LE32(mode);
-
         int32_t frequency;
-        f.read((char*)&frequency, 4);
-        frequency = (int32_t)LE32((uint32_t)frequency);
 
-        f.seekg(baseOffset + currentSampleHeaderOffset + 66);
-        uint16_t channels;
-        f.read((char*)&channels, 2);
-        channels = LE16(channels);
+        if (sampleHeaderSize >= 80) {
+            // MK9 PS3 Layout
+            f.read((char*)&loopStart, 4); // 44
+            f.read((char*)&mode, 4);      // 48
+
+            uint32_t freqVal;
+            f.read((char*)&freqVal, 4);   // 52
+
+            loopStart = LE32(loopStart);
+            mode = LE32(mode);
+            frequency = (int32_t)LE32(freqVal);
+            loopEnd = 0; // Simplified
+        } else {
+            // Standard FSB4 Layout
+            f.read((char*)&loopStart, 4); // 44
+            f.read((char*)&loopEnd, 4);   // 48
+            f.read((char*)&mode, 4);      // 52
+
+            uint32_t freqVal;
+            f.read((char*)&freqVal, 4);   // 56
+
+            loopStart = LE32(loopStart);
+            loopEnd = LE32(loopEnd);
+            mode = LE32(mode);
+            frequency = (int32_t)LE32(freqVal);
+        }
+
+        uint16_t channels = 1;
+        if (sampleHeaderSize >= 68) {
+            f.seekg(baseOffset + currentSampleHeaderOffset + 62);
+            f.read((char*)&channels, 2);
+            channels = LE16(channels);
+            if (channels > 8) { // Garbage? Try offset 66
+                f.seekg(baseOffset + currentSampleHeaderOffset + 66);
+                f.read((char*)&channels, 2);
+                channels = LE16(channels);
+            }
+        }
 
         // Heuristic: Use the larger of compressed and uncompressed size for data offset calculation.
         uint32_t actualDataSize = (compressedSize > uncompressedSize) ? compressedSize : uncompressedSize;
@@ -104,7 +139,7 @@ std::vector<FSBSample> ParseFSB(const std::string& fsbPath, uint32_t baseOffset,
         s.size = actualDataSize;
         s.headerOffset = currentSampleHeaderOffset;
         s.headerSize = sampleHeaderSize;
-        s.numSamples = numSamples;
+        s.numSamples = sampleNumSamples;
         s.uncompressedSize = uncompressedSize;
         s.loopStart = loopStart;
         s.loopEnd = loopEnd;
